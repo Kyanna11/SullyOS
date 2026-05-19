@@ -540,6 +540,7 @@
     <img class="modal-img" id="modalImg" alt="你的形象">
     <div class="modal-actions">
       <button class="pill-btn" onclick="closeModal()">关闭</button>
+      <button class="pill-btn" id="btnSavePng" style="display:none">📥 保存 PNG</button>
       <button class="pill-btn primary" id="btnDownload">下载 PNG</button>
     </div>
   </div>
@@ -2005,6 +2006,7 @@ function setExportMode(mode) {
   img.classList.toggle("transparent-preview", mode === "transparent");
 
   const btnDownload = document.getElementById("btnDownload");
+  const btnSavePng = document.getElementById("btnSavePng");
   if (IS_EMBEDDED) {
     btnDownload.textContent = "确认 ✓";
     btnDownload.onclick = () => {
@@ -2019,6 +2021,18 @@ function setExportMode(mode) {
         }
       }, '*');
     };
+    // 嵌入态：额外提供一个"保存 PNG"按钮，让 user 先存到相册再确认进入下一步
+    btnSavePng.style.display = '';
+    btnSavePng.onclick = () => {
+      const a = document.createElement("a");
+      a.href = url;
+      const who = LIKE520_MODE === 'user' ? '我' : '大头贴';
+      a.download = mode === "transparent"
+        ? `${who}_无背景_${Date.now()}.png`
+        : `${who}_520_${Date.now()}.png`;
+      a.click();
+      toast("已保存 ♥");
+    };
   } else {
     btnDownload.textContent = "下载 PNG";
     btnDownload.onclick = () => {
@@ -2029,6 +2043,7 @@ function setExportMode(mode) {
         : `大头贴_520_${Date.now()}.png`;
       a.click();
     };
+    btnSavePng.style.display = 'none';
   }
 }
 

@@ -1162,6 +1162,7 @@ const WishPaperOverlay: React.FC<{
                 .l520-wish-paper {
                     position: relative;
                     width: min(86vw, 380px);
+                    max-height: min(78vh, 540px);
                     padding: 38px 32px 44px;
                     background:
                         linear-gradient(176deg, #fffdf4 0%, #fdf5e0 55%, #f6e9c8 100%);
@@ -1172,7 +1173,20 @@ const WishPaperOverlay: React.FC<{
                     border-radius: 4px;
                     transform: rotate(-1.6deg);
                     animation: l520-wish-unfold 0.95s cubic-bezier(0.22, 1.1, 0.36, 1) both;
+                    display: flex;
+                    flex-direction: column;
                 }
+                .l520-wish-scroll {
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                    flex: 1;
+                    min-height: 0;
+                    /* 隐藏 webkit 滚动条 */
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(184,146,63,0.4) transparent;
+                }
+                .l520-wish-scroll::-webkit-scrollbar { width: 4px; }
+                .l520-wish-scroll::-webkit-scrollbar-thumb { background: rgba(184,146,63,0.35); border-radius: 2px; }
                 /* 折痕 */
                 .l520-wish-paper::before, .l520-wish-paper::after {
                     content: '';
@@ -1225,15 +1239,25 @@ const WishPaperOverlay: React.FC<{
                 .l520-wish-line {
                     font-family: 'Noto Serif SC', serif;
                     font-weight: 500;
-                    font-size: 17px;
+                    font-size: clamp(13px, 4.2vw, 17px);
                     line-height: 2;
                     color: #5a2230;
                     text-align: center;
-                    letter-spacing: 2.5px;
-                    text-indent: 2.5px;
+                    letter-spacing: 1.6px;
+                    text-indent: 1.6px;
                     opacity: 0;
                     animation: l520-wish-text-in 1.4s cubic-bezier(0.16, 1, 0.3, 1) 1s forwards;
                     white-space: pre-wrap;
+                    word-break: break-word;
+                    overflow-wrap: break-word;
+                    padding: 0 2px;
+                }
+                .l520-wish-line.long {
+                    font-size: clamp(12px, 3.6vw, 15px);
+                    line-height: 1.85;
+                    letter-spacing: 1.2px;
+                    text-align: left;
+                    text-indent: 2em;
                 }
                 .l520-wish-action {
                     position: absolute;
@@ -1267,9 +1291,11 @@ const WishPaperOverlay: React.FC<{
                 <span className="corner br" />
                 <div className="l520-wish-action">— {userAction} —</div>
                 <div className="l520-wish-eyebrow">a small wish</div>
-                {caption && <div className="l520-wish-caption">{caption}</div>}
-                <div className="l520-wish-divider">❦ ⸙ ❦</div>
-                <div className="l520-wish-line">{wishLine}</div>
+                <div className="l520-wish-scroll">
+                    {caption && <div className="l520-wish-caption">{caption}</div>}
+                    <div className="l520-wish-divider">❦ ⸙ ❦</div>
+                    <div className={`l520-wish-line ${wishLine.length > 36 ? 'long' : ''}`}>{wishLine}</div>
+                </div>
                 <div className="l520-wish-hint" onClick={onDismiss} style={{ cursor: 'pointer' }}>
                     — 轻 触 任 意 处 继 续 —
                 </div>
@@ -1992,7 +2018,7 @@ const UncoveredLineView: React.FC<{
                             maxWidth: '42%',
                             objectFit: 'contain',
                             objectPosition: 'bottom',
-                            filter: 'drop-shadow(0 12px 18px rgba(122,46,58,0.3))',
+                            filter: 'drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 3px rgba(255,255,255,0.85)) drop-shadow(0 12px 18px rgba(122,46,58,0.3))',
                         }}
                     />
                     <img
@@ -2003,7 +2029,7 @@ const UncoveredLineView: React.FC<{
                             maxWidth: '42%',
                             objectFit: 'contain',
                             objectPosition: 'bottom',
-                            filter: 'drop-shadow(0 12px 18px rgba(122,46,58,0.3))',
+                            filter: 'drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 3px rgba(255,255,255,0.85)) drop-shadow(0 12px 18px rgba(122,46,58,0.3))',
                             animation: 'l520-userwaddle 1.6s cubic-bezier(0.34, 1.56, 0.64, 1) both',
                             transformOrigin: 'bottom center',
                         }}
@@ -2090,8 +2116,8 @@ const EndingScreen: React.FC<{
         <div className="absolute inset-0 bg-black flex flex-col items-center justify-center px-6">
             {step >= 1 && (
                 <div className="flex items-end justify-center gap-2 mb-8 animate-fade-in">
-                    <img src={charChibi} alt="char" className="h-40 object-contain" />
-                    <img src={userChibi} alt="user" className="h-40 object-contain" />
+                    <img src={charChibi} alt="char" className="h-40 object-contain" style={{ filter: 'drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 3px rgba(255,255,255,0.85))' }} />
+                    <img src={userChibi} alt="user" className="h-40 object-contain" style={{ filter: 'drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 3px rgba(255,255,255,0.85))' }} />
                 </div>
             )}
             {step >= 2 && (
@@ -2181,7 +2207,7 @@ const LetterView: React.FC<{ text: string; onNext: () => void; onClose: () => vo
             <Like520StyleTag />
             <CornerOrnaments />
             <AmbientLayer />
-            <ExitButton onClick={onClose} />
+            {/* 信件页不放退出按钮——走完看完信再"收下"进入下一步 */}
             <div className="l520-letter-stage">
                 <div
                     ref={saveAreaRef}
@@ -2293,11 +2319,37 @@ async function composePuzzlePhoto(charChibiUrl: string, userChibiUrl: string): P
     const totalW = charW + userW + gap;
     const startX = (canvas.width - totalW) / 2;
     const bottomY = canvas.height * 0.94;
-    ctx.shadowColor = 'rgba(199, 97, 130, 0.25)';
-    ctx.shadowBlur = 12;
-    ctx.shadowOffsetY = 4;
-    ctx.drawImage(charImg, startX, bottomY - targetH, charW, targetH);
-    ctx.drawImage(userImg, startX + charW + gap, bottomY - targetH, userW, targetH);
+
+    const charX = startX;
+    const userX = startX + charW + gap;
+    const topY = bottomY - targetH;
+
+    // 第一遍：白色柔光描边（防止黑色头发/配件融入背景）
+    // 用多个白色 0-offset 的 drop-shadow 叠加模拟白色 outline + 轻发光
+    const drawWithWhiteOutline = (img: HTMLImageElement, x: number, y: number, w: number, h: number) => {
+        ctx.shadowColor = 'rgba(255,255,255,0.95)';
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        // 多次重叠 1-2px shadow 让 outline 实在一点
+        for (const blur of [3, 3, 5]) {
+            ctx.shadowBlur = blur;
+            ctx.drawImage(img, x, y, w, h);
+        }
+        // 再叠一层浅粉柔光，远处那种 halo
+        ctx.shadowColor = 'rgba(255,228,236,0.55)';
+        ctx.shadowBlur = 14;
+        ctx.drawImage(img, x, y, w, h);
+        // 最后清掉 shadow，画一遍干净的 chibi 在最上面
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.drawImage(img, x, y, w, h);
+    };
+
+    drawWithWhiteOutline(charImg, charX, topY, charW, targetH);
+    drawWithWhiteOutline(userImg, userX, topY, userW, targetH);
+
     return canvas.toDataURL('image/png');
 }
 
@@ -2418,12 +2470,12 @@ const DoneView: React.FC<{
                 {/* 头像 + chibi 合影 */}
                 <div className="flex items-end justify-center gap-2 mb-5" style={{ animation: 'l520-done-pulse 3.5s ease-in-out infinite' }}>
                     {charChibi ? (
-                        <img src={charChibi} alt="" style={{ height: 110, objectFit: 'contain', filter: 'drop-shadow(0 6px 12px rgba(199,97,130,0.35))' }} />
+                        <img src={charChibi} alt="" style={{ height: 110, objectFit: 'contain', filter: 'drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 3px rgba(255,255,255,0.85)) drop-shadow(0 6px 12px rgba(199,97,130,0.35))' }} />
                     ) : charAvatar ? (
                         <img src={charAvatar} alt="" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover', boxShadow: '0 6px 14px rgba(199,97,130,0.3)' }} />
                     ) : null}
                     {userChibi && (
-                        <img src={userChibi} alt="" style={{ height: 110, objectFit: 'contain', filter: 'drop-shadow(0 6px 12px rgba(199,97,130,0.35))' }} />
+                        <img src={userChibi} alt="" style={{ height: 110, objectFit: 'contain', filter: 'drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 3px rgba(255,255,255,0.85)) drop-shadow(0 6px 12px rgba(199,97,130,0.35))' }} />
                     )}
                 </div>
 
@@ -2620,7 +2672,7 @@ function useLike520BGM(active: boolean, currentGroup: BGMGroupKey | null) {
         if (!active) return;
         if (Object.keys(audiosRef.current).length > 0) return; // 已初始化
 
-        console.log('[520][BGM] 各组随机抽样 + 预加载');
+        console.log('[520][BGM] init | muted=', mutedRef.current, '| HAS_BGM=', HAS_BGM);
         (Object.keys(LIKE520_BGM_GROUPS) as BGMGroupKey[]).forEach(key => {
             const url = pickRandom(LIKE520_BGM_GROUPS[key]);
             if (!url) return;
@@ -2629,6 +2681,8 @@ function useLike520BGM(active: boolean, currentGroup: BGMGroupKey | null) {
                 audio.loop = true;
                 audio.volume = 0;
                 audio.preload = 'auto';
+                audio.addEventListener('error', () => console.warn(`[520][BGM] ${key} audio error`, audio.error?.code, audio.src));
+                audio.addEventListener('canplay', () => console.log(`[520][BGM] ${key} canplay`));
                 // 注：不设 crossOrigin —— HTMLAudioElement 普通播放不需要 CORS，
                 // 设了反而要求 CDN 必须返回 CORS 头，否则整段播放失败
                 audio.src = url;
