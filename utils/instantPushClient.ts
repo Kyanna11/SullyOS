@@ -1,5 +1,6 @@
 import { InstantPushConfig, APIConfig } from '../types';
 import { loadPushVapid, isPushVapidReady } from './pushVapid';
+import { ActiveMsgStore } from './activeMsgStore';
 import {
   SUBSCRIBE_SETTLE_MS,
   bytesToB64u,
@@ -293,6 +294,11 @@ export interface InstantPushPayload {
   temperature?: number;
   messageSubtype?: string;
   metadata?: Record<string, unknown>;
+  // Phase 2 Round 1: 客户端预分配 sessionId, 写入 outbound_sessions 后传给 worker.
+  // amsg-instant 0.6.x worker 会忽略不识别的字段, 0.8+ 会用它作为 agentic-loop 会话标识.
+  // sendInstantPushAndAwaitReply 自动注入; 直接调用 sendInstantPush 的低阶路径 (e.g. 测试推送)
+  // 可省略, 此时 worker 行为退化到 v0.6 one-shot.
+  sessionId?: string;
 }
 
 // ── localStorage helpers ───────────────────────────────────────────────────
@@ -603,13 +609,39 @@ export async function sendInstantPushAndAwaitReply(
   };
   window.addEventListener('active-msg-received', pushHandler);
 
+  // Phase 2 Round 1: 预分配 sessionId, 把 outbound session (messages + apiCredentials) 写到
+  // IndexedDB 后传给 worker. amsg-instant 0.6.x 忽略该字段, 0.8+ 用作 agentic-loop /continue
+  // 续跑标识. crypto.randomUUID 在所有目标环境 (Safari 15.4+ / Chrome 92+) 可用; SSR 中性,
+  // 该路径只在浏览器执行.
+  const sessionId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    ? crypto.randomUUID()
+    : `sess-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  try {
+    await ActiveMsgStore.saveOutboundSession({
+      sessionId,
+      charId,
+      messages: business.messages
+        ? [...business.messages]
+        : (business.completePrompt ? [{ role: 'user' as const, content: business.completePrompt }] : []),
+      apiCredentials: {
+        baseUrl: business.apiUrl,
+        apiKey: business.apiKey,
+        model: business.primaryModel,
+      },
+      createdAt: Date.now(),
+    });
+  } catch (e) {
+    // outbound 写入失败不阻塞 push 主路径; Round 2 worker 升级前这条数据没人读
+    console.warn('[InstantPush] saveOutboundSession failed (non-fatal)', sessionId, e);
+  }
+
   const sendStartedAt = Date.now();
   try {
     // keepalive: true 让 fetch 在进程被杀后仍能完成（iOS PWA swipe-kill 关键保障）
     // onDispatched 在 fetch 同步排进网络栈后立刻 fire，UI 此时即可取消"准备中"
     // 半透明态 —— 不等 response，因为 worker 是同步阻塞跑完 LLM+push 才 200
     const sendResult = await sendInstantPush(
-      { ...business, pushSubscription: sub },
+      { ...business, pushSubscription: sub, sessionId },
       { keepalive: true, onDispatched: onPosted },
     );
     if (!sendResult.ok) {

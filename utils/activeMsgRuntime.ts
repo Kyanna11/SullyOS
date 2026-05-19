@@ -81,6 +81,26 @@ const processInboxMessageWithPostProcessing = async (message: ActiveMsg2InboxMes
     }));
   };
 
+  // Phase 2 Round 1: 如果 worker (Round 2) 发的 reasoning push 已经被 SW 写到 reasoning_buffer,
+  // 在处理"这个 sessionId 的第一条 content"时把 reasoning_content 反取出来挂到 ctx, 让 thinking
+  // chain 卡片能渲染到第一条 assistant message 的 metadata.thinkingChain.
+  // Round 1 worker 还在 0.6 one-shot, 不会发 reasoning push, claimReasoning 始终返回 null.
+  const sessionId: string | undefined = (message as any).sessionId
+    || (message.metadata && (message.metadata as any).sessionId);
+  const messageIndex: number = (message as any).messageIndex
+    ?? (message.metadata && (message.metadata as any).messageIndex)
+    ?? 0;
+  let reasoningContent: string | undefined;
+  if (sessionId && messageIndex === 0) {
+    try {
+      const buffered = await ActiveMsgStore.claimReasoning(sessionId);
+      reasoningContent = buffered?.reasoningContent;
+    } catch (e) {
+      console.warn('[ActiveMsg] claimReasoning failed', sessionId, e);
+    }
+  }
+  void reasoningContent;  // 当前 applyAssistantPostProcessing 还没消费这个字段, Round 2 接入
+
   await applyAssistantPostProcessing(message.body || '', {
     char,
     userProfile,
@@ -224,6 +244,24 @@ const flushInboxToChat = async () => {
   }
 };
 
+// Phase 2 Round 1 stub: 在启动时排空可能存在的 pending_tool_calls. Round 1 这个 store 应该
+// 永远是空的 (worker 还没升级到 0.8 / SW 也没分轨), 但留下消费器:
+//   - 万一升级时机不同步 (SW 比 main thread 先升), store 有数据时不至于死锁
+//   - Round 2 切换到真实 tool runner 时直接替换函数体即可
+const runPendingToolCallsPlaceholder = async () => {
+  try {
+    const pending = await ActiveMsgStore.consumePendingToolCalls();
+    if (pending.length > 0) {
+      console.warn(
+        `[instant-push] ${pending.length} pending tool calls dropped — tool runner not yet wired (Phase 2 Round 2)`,
+        pending.map(p => ({ sessionId: p.sessionId, charId: p.charId, toolCount: p.toolCalls.length })),
+      );
+    }
+  } catch (e) {
+    console.warn('[instant-push] consumePendingToolCalls failed at startup', e);
+  }
+};
+
 const handleDeepLink = () => {
   const currentUrl = new URL(window.location.href);
   const charId = currentUrl.searchParams.get('activeMsgCharId');
@@ -262,6 +300,7 @@ export const ActiveMsgRuntime = {
       });
     }
 
+    await runPendingToolCallsPlaceholder();
     await flushInboxToChat();
     handleDeepLink();
   },
