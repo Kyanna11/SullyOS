@@ -706,9 +706,13 @@ export async function sendTestInstantPush(
   //
   // metadata.test = true 让 SW push handler 绕过"前台跳过 showNotification"
   // 逻辑 — 测试就是要看到通知, 不能被前台静默吃掉.
+  //
+  // Phase 2 Round 2 (worker 升 0.8 + onLLMOutput hook): hook 路径**不接受** completePrompt
+  // (worker 返 COMPLETE_PROMPT_NOT_SUPPORTED_ON_HOOK_PATH 400). 测试推送改用 messages 数组
+  // 包一条 user 消息, 行为跟 0.6 路径下 worker 内部自动把 completePrompt 包成 single user msg 等价.
   return sendInstantPush({
     contactName: 'Instant Push 测试',
-    completePrompt: '用一句话简短地和用户说一声 hi，确认 Instant Push 工作正常',
+    messages: [{ role: 'user', content: '用一句话简短地和用户说一声 hi，确认 Instant Push 工作正常' }],
     apiUrl: apiConfig.baseUrl,
     apiKey: apiConfig.apiKey,
     primaryModel: apiConfig.model,
