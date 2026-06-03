@@ -56,6 +56,7 @@ const VRWorldApp: React.FC = () => {
 
     const [enterRoom, setEnterRoom] = useState<VRRoomId | null>(null);
     const [readerNovel, setReaderNovel] = useState<VRWorldNovel | null>(null);
+    const [readerJump, setReaderJump] = useState<{ novel: VRWorldNovel; seg: number } | null>(null);
     const [showUpload, setShowUpload] = useState(false);
     const [chibiEditChar, setChibiEditChar] = useState<CharacterProfile | null>(null);
     // 启用流程：设定 chibi 后回调启用
@@ -108,6 +109,13 @@ const VRWorldApp: React.FC = () => {
     }, [characters]);
 
     const enabledCount = characters.filter(c => c.vrState?.enabled).length;
+
+    // 从动态/批注点回原文：peek 模式打开阅读器跳到该段，不动用户书签
+    const jumpToAnnotation = useCallback((novelId: string | undefined, segIdx: number) => {
+        if (!novelId) return;
+        const n = novels.find(x => x.id === novelId);
+        if (n) setReaderJump({ novel: n, seg: segIdx });
+    }, [novels]);
 
     // 启用某角色（带 chibi 设定门槛）
     const enableChar = (char: CharacterProfile) => {
@@ -162,7 +170,7 @@ const VRWorldApp: React.FC = () => {
                     <div className="text-center text-indigo-300/60 text-sm py-10">载入彼方…</div>
                 ) : tab === 'world' ? (
                     <WorldView occupantsByRoom={occupantsByRoom} feed={feed} novelCount={novels.length}
-                        onEnterRoom={setEnterRoom} onGoLibrary={() => setTab('library')} />
+                        onEnterRoom={setEnterRoom} onGoLibrary={() => setTab('library')} onJump={jumpToAnnotation} />
                 ) : tab === 'library' ? (
                     <LibraryView novels={novels} characters={characters} onOpen={setReaderNovel}
                         onAdd={() => setShowUpload(true)}
@@ -177,9 +185,10 @@ const VRWorldApp: React.FC = () => {
             {/* 进入房间场景 */}
             {enterRoom && (
                 <RoomScene roomId={enterRoom} occupants={occupantsByRoom[enterRoom] || []}
-                    latestByChar={latestByChar} onClose={() => setEnterRoom(null)} />
+                    latestByChar={latestByChar} onClose={() => setEnterRoom(null)} onJump={jumpToAnnotation} />
             )}
             {readerNovel && <ReaderModal novel={readerNovel} characters={characters} onClose={() => setReaderNovel(null)} />}
+            {readerJump && <ReaderModal novel={readerJump.novel} characters={characters} initialSeg={readerJump.seg} peek onClose={() => setReaderJump(null)} />}
             {showUpload && (
                 <UploadModal onClose={() => setShowUpload(false)}
                     onCommit={async (novel) => {
@@ -303,7 +312,8 @@ const WorldView: React.FC<{
     occupantsByRoom: Record<string, CharacterProfile[]>;
     feed: FeedItem[]; novelCount: number;
     onEnterRoom: (r: VRRoomId) => void; onGoLibrary: () => void;
-}> = ({ occupantsByRoom, feed, novelCount, onEnterRoom, onGoLibrary }) => (
+    onJump: (novelId: string | undefined, segIdx: number) => void;
+}> = ({ occupantsByRoom, feed, novelCount, onEnterRoom, onGoLibrary, onJump }) => (
     <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
             {VR_ROOMS.map(room => {
@@ -361,13 +371,22 @@ const WorldView: React.FC<{
                                         <span className="ml-auto text-indigo-300/40 text-[9px]">{new Date(item.timestamp).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                                     </div>
                                     <p className="text-[11.5px] text-indigo-50/90 mt-0.5 leading-snug">{item.meta.activity}</p>
-                                    {item.meta.annotationExcerpts && item.meta.annotationExcerpts.length > 0 && (
+                                    {item.meta.annotationRefs && item.meta.annotationRefs.length > 0 ? (
+                                        <div className="mt-1 space-y-0.5">
+                                            {item.meta.annotationRefs.slice(0, 3).map((ref, i) => (
+                                                <button key={i} onClick={() => onJump(item.meta.novelId, ref.segIdx)}
+                                                    className="block w-full text-left text-[10.5px] text-indigo-200/80 pl-2 border-l-2 border-amber-300/50 leading-snug active:opacity-60 hover:text-amber-100">
+                                                    {ref.text} <span className="text-amber-300/60">↗原文</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : item.meta.annotationExcerpts && item.meta.annotationExcerpts.length > 0 ? (
                                         <div className="mt-1 space-y-0.5">
                                             {item.meta.annotationExcerpts.slice(0, 2).map((ex, i) => (
                                                 <div key={i} className="text-[10.5px] text-indigo-200/70 pl-2 border-l-2 border-amber-300/40 leading-snug">{ex}</div>
                                             ))}
                                         </div>
-                                    )}
+                                    ) : null}
                                 </div>
                             </div>
                         );
@@ -384,7 +403,8 @@ const toSong = (s: CharPlaylistSong): Song => ({ id: s.id, name: s.name, artists
 const RoomScene: React.FC<{
     roomId: VRRoomId; occupants: CharacterProfile[];
     latestByChar: Record<string, FeedItem>; onClose: () => void;
-}> = ({ roomId, occupants, latestByChar, onClose }) => {
+    onJump: (novelId: string | undefined, segIdx: number) => void;
+}> = ({ roomId, occupants, latestByChar, onClose, onJump }) => {
     const room = getRoom(roomId);
     const slots = ROOM_SLOTS[roomId];
     const isMusic = roomId === 'music';
@@ -491,9 +511,16 @@ const RoomScene: React.FC<{
                                 <>
                                     <p className="text-[12.5px] text-indigo-50/90 leading-relaxed">{m.activity}</p>
                                     {m.behavior && <p className="text-[11px] text-pink-200/80 mt-1.5">🎧 {m.behavior}</p>}
-                                    {m.annotationExcerpts?.map((ex, i) => (
-                                        <div key={i} className="mt-1.5 text-[11.5px] text-indigo-200/80 pl-2 border-l-2 border-amber-300/50 leading-snug">{ex}</div>
-                                    ))}
+                                    {m.annotationRefs && m.annotationRefs.length > 0
+                                        ? m.annotationRefs.map((ref, i) => (
+                                            <button key={i} onClick={() => { onJump(m.novelId, ref.segIdx); setDetail(null); }}
+                                                className="block w-full text-left mt-1.5 text-[11.5px] text-indigo-200/85 pl-2 border-l-2 border-amber-300/50 leading-snug active:opacity-60">
+                                                {ref.text} <span className="text-amber-300/70">↗原文</span>
+                                            </button>
+                                        ))
+                                        : m.annotationExcerpts?.map((ex, i) => (
+                                            <div key={i} className="mt-1.5 text-[11.5px] text-indigo-200/80 pl-2 border-l-2 border-amber-300/50 leading-snug">{ex}</div>
+                                        ))}
                                     <p className="text-[9px] text-indigo-300/50 mt-2">{new Date(latestByChar[detail.id].timestamp).toLocaleString('zh-CN')}</p>
                                 </>
                             );
@@ -574,9 +601,9 @@ const writeUserBm = (id: string, idx: number) => {
 // 单段渲染（翻页/滚动共用）
 const SegBlock: React.FC<{
     seg: { idx: number; text: string }; anns: VRNovelAnnotation[];
-    theme: ReaderTheme; fontSize: number; nameOf: (id: string) => string | undefined;
-}> = ({ seg, anns, theme, fontSize, nameOf }) => (
-    <div data-seg={seg.idx} className="mb-5">
+    theme: ReaderTheme; fontSize: number; nameOf: (id: string) => string | undefined; highlight?: boolean;
+}> = ({ seg, anns, theme, fontSize, nameOf, highlight }) => (
+    <div data-seg={seg.idx} className="mb-5 rounded-lg transition-colors" style={highlight ? { background: `${theme.accent}1f`, boxShadow: `0 0 0 2px ${theme.accent}66`, padding: '8px 10px', margin: '0 -10px 20px' } : undefined}>
         <p className="whitespace-pre-wrap" style={{ color: theme.text, fontSize, lineHeight: 1.9, textIndent: '2em' }}>{seg.text}</p>
         {anns.map(a => (
             <div key={a.id} className="mt-2 ml-2 rounded-lg px-3 py-2" style={{ background: theme.annBg, borderLeft: `3px solid ${theme.accent}` }}>
@@ -588,10 +615,14 @@ const SegBlock: React.FC<{
     </div>
 );
 
-const ReaderModal: React.FC<{ novel: VRWorldNovel; characters: CharacterProfile[]; onClose: () => void; }> = ({ novel, characters, onClose }) => {
+const ReaderModal: React.FC<{ novel: VRWorldNovel; characters: CharacterProfile[]; onClose: () => void; initialSeg?: number; peek?: boolean; }> = ({ novel, characters, onClose, initialSeg, peek }) => {
     const PAGE_SIZE = 8;
     const total = novel.segments.length;
-    const initialBm = useMemo(() => Math.min(readUserBm(novel.id), Math.max(0, total - 1)), [novel.id, total]);
+    // peek（查看某条批注）时落在 initialSeg，且全程不写用户书签
+    const initialBm = useMemo(() => {
+        const base = (initialSeg != null) ? initialSeg : readUserBm(novel.id);
+        return Math.min(Math.max(0, base), Math.max(0, total - 1));
+    }, [novel.id, total, initialSeg]);
 
     const [annotations, setAnnotations] = useState<VRNovelAnnotation[]>([]);
     const [themeId, setThemeId] = useState<string>(() => localStorage.getItem(READER_THEME_KEY) || 'paper');
@@ -614,12 +645,12 @@ const ReaderModal: React.FC<{ novel: VRWorldNovel; characters: CharacterProfile[
     useEffect(() => { localStorage.setItem(READER_THEME_KEY, themeId); }, [themeId]);
     useEffect(() => { localStorage.setItem(READER_FONT_KEY, String(fontSize)); }, [fontSize]);
 
-    // 翻页：换页存书签 + 回顶
+    // 翻页：换页存书签 + 回顶（peek 模式不写书签）
     useEffect(() => {
         if (mode !== 'page') return;
-        writeUserBm(novel.id, page * PAGE_SIZE);
+        if (!peek) writeUserBm(novel.id, page * PAGE_SIZE);
         if (scrollRef.current) scrollRef.current.scrollTop = 0;
-    }, [page, mode, novel.id]);
+    }, [page, mode, novel.id, peek]);
 
     // 滚动：prepend 后补偿滚动位置，避免跳动
     useLayoutEffect(() => {
@@ -665,7 +696,7 @@ const ReaderModal: React.FC<{ novel: VRWorldNovel; characters: CharacterProfile[
             for (const n of Array.from(nodes)) {
                 if (n.offsetTop + n.offsetHeight > top + 4) {
                     const idx = Number(n.dataset.seg);
-                    setTopSeg(idx); writeUserBm(novel.id, idx);
+                    setTopSeg(idx); if (!peek) writeUserBm(novel.id, idx);
                     break;
                 }
             }
@@ -695,6 +726,12 @@ const ReaderModal: React.FC<{ novel: VRWorldNovel; characters: CharacterProfile[
                 </div>
                 <button onClick={() => setShowCtl(s => !s)} className="p-1.5 rounded-full active:bg-black/5" style={{ color: theme.accent }}><Palette size={18} weight="bold" /></button>
             </div>
+
+            {peek && (
+                <div className="px-4 py-1.5 shrink-0 text-[11px] text-center" style={{ background: `${theme.accent}1a`, color: theme.accent }}>
+                    👀 正在查看批注位置 · 不会改动你的书签
+                </div>
+            )}
 
             {/* 控制条：主题 / 字号 / 模式 */}
             {showCtl && (
@@ -743,7 +780,7 @@ const ReaderModal: React.FC<{ novel: VRWorldNovel; characters: CharacterProfile[
                     <div className="text-center text-[10px] mb-3" style={{ color: theme.sub }}>—— 上滑加载更早内容 ——</div>
                 )}
                 {renderSegs.map(seg => (
-                    <SegBlock key={seg.idx} seg={seg} anns={annBySeg.get(seg.idx) || []} theme={theme} fontSize={fontSize} nameOf={nameOf} />
+                    <SegBlock key={seg.idx} seg={seg} anns={annBySeg.get(seg.idx) || []} theme={theme} fontSize={fontSize} nameOf={nameOf} highlight={peek && seg.idx === initialSeg} />
                 ))}
             </div>
 

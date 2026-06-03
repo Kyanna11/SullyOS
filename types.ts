@@ -702,6 +702,8 @@ export interface VRCardMeta {
     segRange?: [number, number];
     /** 本次写下的批注摘要（保留正文，原文省略） */
     annotationExcerpts?: string[];
+    /** 带段落锚点的批注引用（用于从动态点回原文跳转） */
+    annotationRefs?: { segIdx: number; text: string }[];
     // --- 听歌房专用 ---
     /** 本次评/听的当前歌（名 - 歌手） */
     songLabel?: string;

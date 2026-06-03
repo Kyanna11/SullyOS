@@ -184,6 +184,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
             const label2id = new Map<string, string>();
             for (const a of allAnn) label2id.set(a.id.slice(-4), a.id);
             const savedExcerpts: string[] = [];
+            const savedRefs: { segIdx: number; text: string }[] = [];
             let written = 0;
             for (const pa of parsed.annotations) {
                 if (pa.segIdx < win!.from || pa.segIdx >= win!.to) continue;
@@ -191,7 +192,9 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
                 const ann = buildAnnotation({ novelId: novel!.id, segIdx: pa.segIdx, authorId: char.id, authorName: char.name, content: pa.content, targetAnnotationId: targetId });
                 await DB.saveVRAnnotation(ann);
                 label2id.set(ann.id.slice(-4), ann.id);
-                savedExcerpts.push(pa.content.length > 60 ? pa.content.slice(0, 60) + '…' : pa.content);
+                const ex = pa.content.length > 60 ? pa.content.slice(0, 60) + '…' : pa.content;
+                savedExcerpts.push(ex);
+                savedRefs.push({ segIdx: pa.segIdx, text: ex });
                 written += 1;
             }
             const nextBookmark = win!.reachedEnd ? novel!.segments.length : win!.to;
@@ -201,7 +204,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
             activity = parsed.activity || `读了《${novel!.title}》第 ${win!.from + 1}~${win!.to} 段${written ? `，留下了 ${written} 条批注` : '，安静读完没多说什么'}。`;
             cardLines = [`「${room.emoji} 彼方·${room.name}」`, `${char.name}${activity}`];
             if (savedExcerpts.length) { cardLines.push('批注：'); for (const ex of savedExcerpts) cardLines.push(`· ${ex}`); }
-            meta = { vrCard: true, room: 'library', activity, novelId: novel!.id, novelTitle: novel!.title, segRange: [win!.from, win!.to], annotationExcerpts: savedExcerpts };
+            meta = { vrCard: true, room: 'library', activity, novelId: novel!.id, novelTitle: novel!.title, segRange: [win!.from, win!.to], annotationExcerpts: savedExcerpts, annotationRefs: savedRefs };
         } else {
             // === 听歌房：点歌进队列 + 乐评 + 推进循环队列 ===
             const parsed = parseMusicOutput(aiContent);
