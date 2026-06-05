@@ -748,6 +748,7 @@ export interface VRLetter {
     // outbox
     status?: 'queued' | 'sent' | 'archived' | 'sealed';  // 待寄出 / 已寄出 / 收到回复留档 / 角色已读并封存
     remoteId?: string;          // 寄出后服务端分配的远端 id
+    released?: boolean;         // 作者已「停止传播」：后端已删、退出公共池，本地仍留档
     sentAt?: number;
     repliesReceived?: VRLetterReply[];
     /** 原作者角色读过回信后的感触（写完即封存，使命完成） */

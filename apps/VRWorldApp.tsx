@@ -917,6 +917,8 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
     const [composeNew, setComposeNew] = useState<VRLetter | null>(null); // 用户自己写新信的草稿
     const [myStats, setMyStats] = useState<Record<string, RemoteLetterStat>>({}); // 我寄出的信热度（按 remoteId）
     const [tab, setTab] = useState<'outbox' | 'reply' | 'inbox' | 'drift' | 'box'>('outbox'); // 左侧分类
+    const [sentMenu, setSentMenu] = useState<VRLetter | null>(null);     // 已寄出信的管理菜单
+    const [confirmDelSent, setConfirmDelSent] = useState<VRLetter | null>(null); // 删除已寄出信的确认
     const enabledChars = characters.filter(c => c.vrState?.enabled);
 
     const load = useCallback(async () => setLetters(await DB.getVRLetters()), []);
@@ -1076,6 +1078,18 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
         else addToast?.('身份码无效（格式或校验位不对）', 'error');
     };
 
+    // 作者停止传播：后端删（退出公共池、不再被陌生人抽到/回信），本地留档
+    const stopDrift = async (l: VRLetter) => {
+        if (!l.remoteId) { addToast?.('这封还没寄出', 'info'); return; }
+        try { await PostOffice.release([l.remoteId]); await DB.saveVRLetter({ ...l, released: true }); await load(); addToast?.('已停止传播，本地仍留档', 'success'); }
+        catch (e: any) { addToast?.('操作失败：' + (e?.message || '检查网络'), 'error'); }
+    };
+    // 作者删除已寄出的信：后端删 + 本地删
+    const deleteSent = async (l: VRLetter) => {
+        try { if (l.remoteId && !l.released) await PostOffice.release([l.remoteId]); await DB.deleteVRLetter(l.id); await load(); addToast?.('已删除', 'success'); }
+        catch (e: any) { addToast?.('删除失败：' + (e?.message || '检查网络'), 'error'); }
+    };
+
     // 「我寄出的信」的热度行（赞/踩/浏览/回信）；没数据就不显示
     const statLine = (remoteId?: string) => {
         const s = remoteId ? myStats[remoteId] : undefined;
@@ -1163,7 +1177,11 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
                         sentAwaiting.length === 0 ? <p className="text-[10.5px] text-white/35 leading-relaxed">已寄出、还在等陌生人回信的漂流信会显示在这里。</p> : (
                             <PagedList items={sentAwaiting} perPage={7} render={l => (
                                 <div key={l.id} className="rounded-lg p-2 mb-1.5 text-[11px]" style={{ background: 'rgba(255,255,255,.04)' }}>
-                                    <div className="text-white/70 leading-snug"><ExpandText text={l.content} limit={70} /></div>
+                                    <div className="flex items-start gap-1.5">
+                                        <div className="flex-1 min-w-0 text-white/70 leading-snug"><ExpandText text={l.content} limit={70} /></div>
+                                        <button onClick={() => setSentMenu(l)} className="shrink-0 text-white/35 text-[14px] leading-none px-1 -mt-0.5 active:text-white/70">···</button>
+                                    </div>
+                                    {l.released && <span className="inline-block mt-1 text-[8px] text-white/45 border border-white/15 rounded-full px-1.5 leading-tight">已停止传播</span>}
                                     {statLine(l.remoteId)}
                                 </div>
                             )} />
@@ -1177,6 +1195,8 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
                                     <div className="flex items-center gap-1.5 mb-1">
                                         <span className="text-amber-200/70 text-[9.5px]">{l.pen}的信</span>
                                         {l.status === 'sealed' && <span className="text-[8px] text-amber-200/60 border border-amber-300/30 rounded-full px-1.5 leading-tight">已封存</span>}
+                                        {l.released && <span className="text-[8px] text-white/45 border border-white/15 rounded-full px-1.5 leading-tight">已停止传播</span>}
+                                        <button onClick={() => setSentMenu(l)} className="ml-auto shrink-0 text-white/35 text-[14px] leading-none px-1 active:text-white/70">···</button>
                                     </div>
                                     <div className="text-amber-50/80 leading-snug mb-1"><ExpandText text={l.content} limit={70} /></div>
                                     {statLine(l.remoteId)}
@@ -1202,6 +1222,15 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
             {editing && <LetterEditModal letter={editing} onSave={saveEdit} onCancel={() => setEditing(null)} />}
             <ConfirmDialog open={!!confirmDel} title="删除这封信？" message={confirmDel ? '这封还没寄出的漂流信将被丢弃。' : ''}
                 onConfirm={() => { if (confirmDel) void del(confirmDel.id); setConfirmDel(null); }} onCancel={() => setConfirmDel(null)} />
+
+            {/* 已寄出信的作者管理：停止传播 / 删除 */}
+            <ActionSheet open={!!sentMenu} title={sentMenu ? '管理这封已寄出的信' : ''}
+                actions={[
+                    ...(sentMenu && !sentMenu.released ? [{ label: '停止传播（退出公共池，本地留档）', onClick: () => { const l = sentMenu; setSentMenu(null); if (l) void stopDrift(l); } }] : []),
+                    { label: '删除这封信（本地与后端都删）', danger: true, onClick: () => { setConfirmDelSent(sentMenu); setSentMenu(null); } },
+                ]} onClose={() => setSentMenu(null)} />
+            <ConfirmDialog open={!!confirmDelSent} title="删除这封信？" message="本地留档与公共池里的这封信都会被删除，相关回信也一并清除，不可恢复。"
+                onConfirm={() => { if (confirmDelSent) void deleteSent(confirmDelSent); setConfirmDelSent(null); }} onCancel={() => setConfirmDelSent(null)} />
 
             {/* 来信长按菜单：指定角色回 / 亲自回 / 删除 */}
             <ActionSheet open={!!inboxMenu} title={inboxMenu ? `回「${inboxMenu.pen}」的来信` : ''}
