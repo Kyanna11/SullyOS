@@ -70,6 +70,25 @@ export interface VRSessionResult {
 const genId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 const running = new Set<string>();
 
+/**
+ * 串行化共享房间状态（留言墙等）的 read-modify-write。
+ *
+ * 背景：留言簿在 session 开头读一次全量 board，LLM 跑完（数秒）后再整体写回。
+ * 两个角色并发 session 时，后写的那次会基于"开头的旧快照"覆盖掉先写的角色刚
+ * 落墙的留言 —— 表现为"有一个人说的内容不显示"（lost update）。
+ *
+ * 所有 VR session 都跑在同一个主线程 JS 上下文里（scheduler 驱动），所以一个
+ * 内存级 async 锁就能完整消除竞态：LLM 调用照旧并发，只把"重新拉取最新 board
+ * → 追加本次新消息 → 落库"这段极短的临界区串起来。
+ */
+let sharedRoomWriteChain: Promise<unknown> = Promise.resolve();
+function withSharedRoomLock<T>(fn: () => Promise<T>): Promise<T> {
+    const result = sharedRoomWriteChain.then(fn, fn);
+    // 推进链条并吞掉错误，避免某次失败卡死后续所有写入
+    sharedRoomWriteChain = result.catch(() => {});
+    return result;
+}
+
 /** 选一本要读的书：优先续读未读完的，否则取最近更新的一本。 */
 function pickNovel(novels: VRWorldNovel[], char: CharacterProfile): VRWorldNovel | null {
     if (novels.length === 0) return null;
@@ -353,25 +372,32 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
         } else if (room.id === 'guestbook') {
             // === 留言簿：发帖/回帖落墙 ===
             const parsed = parseGuestbookOutput(aiContent);
-            const board: VRGuestbookState = guestbook || { id: 'board', messages: [], updatedAt: Date.now() };
+            // 用开头那份快照解析"回复谁"的 #编号映射（被回复的旧消息仍在最新墙上）
             const id2 = new Map<string, string>();
             const id2name = new Map<string, string>();
-            for (const msg of board.messages) { id2.set(msg.id.slice(-4), msg.id); id2name.set(msg.id, msg.authorName); }
+            for (const msg of (guestbook?.messages || [])) { id2.set(msg.id.slice(-4), msg.id); id2name.set(msg.id, msg.authorName); }
             let firstPost: string | undefined;
             let firstReplyName: string | undefined;
             const mine: { content: string; replyToName?: string }[] = [];
+            const newMsgs: VRGuestbookMessage[] = [];
             for (const p of parsed.posts) {
                 const replyToId = p.replyLabel ? id2.get(p.replyLabel) : undefined;
                 const replyToName = replyToId ? id2name.get(replyToId) : undefined;
                 const msg: VRGuestbookMessage = { id: genId('gb'), authorId: char.id, authorName: char.name, content: p.content, replyToId, replyToName, createdAt: Date.now() };
-                board.messages.push(msg);
-                id2.set(msg.id.slice(-4), msg.id); id2name.set(msg.id, char.name);
+                newMsgs.push(msg);
+                id2.set(msg.id.slice(-4), msg.id); id2name.set(msg.id, char.name); // 同批后续留言可回复前面这条
                 mine.push({ content: p.content, replyToName });
                 if (firstPost === undefined) { firstPost = p.content; firstReplyName = replyToName; }
             }
-            board.messages = board.messages.slice(-200);
-            board.updatedAt = Date.now();
-            await DB.saveVRGuestbook(board);
+            // 串行化写入：临界区内重新拉取最新留言墙再追加本次新消息，杜绝并发覆盖
+            if (newMsgs.length > 0) {
+                await withSharedRoomLock(async () => {
+                    const fresh = (await DB.getVRGuestbook()) || { id: 'board', messages: [], updatedAt: Date.now() };
+                    fresh.messages = [...fresh.messages, ...newMsgs].slice(-200);
+                    fresh.updatedAt = Date.now();
+                    await DB.saveVRGuestbook(fresh);
+                });
+            }
             await updateCharacter(char.id, { vrState: { ...prevState, currentRoom: 'guestbook', lastActiveAt: Date.now() } });
 
             activity = parsed.activity || (firstPost
