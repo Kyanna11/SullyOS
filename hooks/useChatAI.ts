@@ -772,7 +772,7 @@ export const useChatAI = ({
 
             // ─── Instant Push 分支 ───
             // 与本地 fetch 对称：sendInstantPushAndAwaitReply 内部完成 sub 获取 / push 监听 /
-            // 90s 超时兜底，返回时 push 已落库（或失败）。外层 finally 统一清 isTyping /
+            // 300s 超时兜底，返回时 push 已落库（或失败）。外层 finally 统一清 isTyping /
             // KeepAlive / 跑 memory palace 后处理，与本地路径完全对齐。
             // worker 端跑完 LLM → push → SW → activeMsgRuntime.flushInboxToChat 写 DB 并刷 UI。
             if (isInstantConfigReady()) {

@@ -730,7 +730,10 @@ export interface InstantAwaitResult {
   diagnostics?: InstantDiagnostics;
 }
 
-const DEFAULT_INSTANT_TIMEOUT_MS = 90_000;
+// Instant Push 路径用户可能不在前台 (锁屏 / 切走 / 关屏), 没有「转圈」之类视觉反馈替代,
+// 必须自设客户端上限, 不能像主聊天本地 fetch 那样无限等。300s 给慢模型 / 长 context 留余
+// 量, 同时避免 worker 真死时用户要等很久才看到错。
+const DEFAULT_INSTANT_TIMEOUT_MS = 300_000;
 
 // SSE 流结束后, 再给「SW 派发 → 客户端 flushInboxToChat 写完 DB」这一跳的宽限时长。
 // 流跑完 (stream_done) 只代表 payload 都交给了 SW, 不代表已落库; 真正的成功信号是
@@ -1028,12 +1031,38 @@ export async function sendInstantPushAndAwaitReply(
     onPosted?.();
     instantTrace(sessionId, 'sse-dispatched');
 
+    // SSE 是前台快通道, 不是送达判定通道。worker 端 `backupPush: 'on'` 保证同一份消息
+    // 同时通过 Web Push 推送, SW 端按 messageId 去重 —— 两条通道在 SW saveContentToInbox
+    // 那里汇成同一条 active-msg-received 广播, 谁先到谁触发 pushArrived。
+    //
+    // 所以 SSE reject (iOS 后台杀 fetch / 网络抖动) **不等于送达失败**, 跟 stream 干净结
+    // 束走同一条「等 push 兜底」路径就够了。真失败有三种 settle:
+    //   - 整体 timeout 到 → outcome:'timeout'
+    //   - SSE reject + 宽限期 push 没到 + SW 也没自报错 → outcome:'send-failed'
+    //   - SSE 干净结束但宽限期 SW 没确认落库 → outcome:'timeout' + 具体落库错文案
+    let sseError: any = null;
     const result = await Promise.race([
       pushArrived.then(() => 'arrived' as const),
-      streamPromise.then(() => 'stream_done' as const),
+      streamPromise
+        .then(() => 'stream_done' as const)
+        .catch((err) => {
+          // 我们主动 abort (pagehide / timeout / arrived 后清理) 触发的 reject 不算 SSE
+          // 本身失败。用 abortController.signal.aborted 判断, 比 err.name === 'AbortError'
+          // 稳: 任何包装层 reject 出非 DOMException (字符串 / 普通对象 / err.name 缺失) 都
+          // 不会漏判, 也避免 race 结束后 abort 触发的 sse-catch 跑到 cleanup 之后污染日志。
+          if (!abortController.signal.aborted) {
+            sseError = err;
+            instantTrace(sessionId, 'sse-catch', {
+              name: err?.name,
+              message: err?.message || String(err),
+              waitedMs: Date.now() - sendStartedAt,
+            });
+          }
+          return 'stream_done' as const;
+        }),
       new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), timeoutMs)),
     ]);
-    instantTrace(sessionId, 'race-result', { result });
+    instantTrace(sessionId, 'race-result', { result, hasSseError: !!sseError });
 
     if (result === 'timeout') {
       abortController.abort();
@@ -1067,11 +1096,13 @@ export async function sendInstantPushAndAwaitReply(
       };
     }
 
-    // result === 'arrived' 才是确定成功 (active-msg-received 已 fire = 消息落库)。
-    // result === 'stream_done' 只代表 worker 流结束 + payload 交给了 SW, 此时再给落库
-    // 这一跳一个短宽限: 等到 pushArrived 才算成功; 等不到按未达处理, 杜绝「流跑完就报
-    // 成功」的误报 (含 SW 投递失败只 resolve(false) 不抛、worker 因 SSE「成功」不再补
-    // Web Push 兜底 → 消息静默丢失却报 received 的情形)。
+    // result === 'arrived': active-msg-received 已 fire = 消息落库 = 确定成功。
+    // result === 'stream_done': SSE 流自然结束 OR SSE reject (iOS 杀 fetch / 网络抖动);
+    //   两种都不代表消息送达, 真信号是 pushArrived。给短宽限等 push 兜底:
+    //   - 宽限内 push 来 → 成功 (含 iOS 后台杀 SSE 但 push 接力的常见情况)
+    //   - 宽限到 push 没来:
+    //       - 有 sseError: SSE 死 + push 也不来 = 真发送失败 (worker 死 / VAPID 错 / 网络断)
+    //       - 无 sseError: SSE 干净结束但 SW 未确认 = 落库链路异常
     if (result === 'stream_done') {
       const flushed = await Promise.race([
         pushArrived.then(() => true),
@@ -1079,6 +1110,7 @@ export async function sendInstantPushAndAwaitReply(
       ]);
       instantTrace(sessionId, 'stream-done-grace', {
         flushed,
+        hasSseError: !!sseError,
         sseDeliveredOk,
         sseDeliveryFailed,
         sseBusinessError,
@@ -1086,6 +1118,59 @@ export async function sendInstantPushAndAwaitReply(
       if (!flushed) {
         abortController.abort();
         const waitedMs = Date.now() - sendStartedAt;
+
+        // SSE 死 + push 没接力 = 真发送失败。SW 若自报错 (sseBusinessError /
+        // sseDeliveryFailed), 把它穿插进文案给排查线索, 但 outcome 维持 send-failed:
+        // 根因是 SSE 中断, 「AI 回复已生成」的语义不再成立, 不能降级成 timeout 文案
+        // (会误导用户「刷新页面后能看到已生成的回复」)。
+        if (sseError) {
+          const swHint = sseBusinessError
+            ? ` (SW 也自报落库错: ${sseBusinessError})`
+            : sseDeliveryFailed
+              ? ' (SW 也未确认收下任何 chunk)'
+              : '';
+          const sseMsg = sseError?.message || String(sseError);
+          instantTrace(sessionId, 'send-failed-after-grace', {
+            waitedMs,
+            name: sseError?.name,
+            message: sseMsg,
+            sseBusinessError,
+            sseDeliveryFailed,
+            sseDeliveredOk,
+          });
+          appendDevDebugInstantPushLog({
+            url: cfg.workerUrl,
+            method: 'POST',
+            status: 500,
+            requestBody: {
+              transport: 'instant-push-sse',
+              sessionId,
+              ...business,
+              apiKey: business.apiKey ? '<redacted>' : '',
+            },
+            response: {
+              outcome: 'send-failed',
+              error: String(sseError),
+              sseBusinessError,
+              sseDeliveryFailed,
+              sseDeliveredOk,
+              waitedMs,
+            },
+          });
+          return {
+            ok: false,
+            outcome: 'send-failed',
+            error: `AI 回复传输中断: ${sseMsg}${swHint}`,
+            diagnostics: {
+              env, context,
+              fetchError: {
+                name: sseError?.name,
+                message: sseMsg,
+              },
+            },
+          };
+        }
+
         instantTrace(sessionId, 'flush-not-confirmed', { waitedMs });
         appendDevDebugInstantPushLog({
           url: cfg.workerUrl,
@@ -1126,6 +1211,12 @@ export async function sendInstantPushAndAwaitReply(
       }
     }
 
+    // arrived 或 stream_done + flushed = 成功。push 已落库, SSE 副本即便没跑完也没意义,
+    // 主动 abort 免得 onPayload 还在喷 ack、占带宽 + 让 streamPromise 早点 settle (内层
+    // .catch 已过滤 AbortError, 不会污染 trace)。stream_done 分支这里 abort 是 no-op,
+    // 但写在一处比分散到 race 各胜出分支后再处理简单。
+    abortController.abort();
+
     appendDevDebugInstantPushLog({
       url: cfg.workerUrl,
       method: 'POST',
@@ -1147,7 +1238,9 @@ export async function sendInstantPushAndAwaitReply(
     });
     return { ok: true, outcome: 'received' };
   } catch (err: any) {
-    instantTrace(sessionId, 'sse-catch', {
+    // SSE 网络 reject 已在内层 streamPromise.catch 接住, 这里只接同步抛错: payload
+    // 校验失败 / new ReiClient 构造异常 / oversize 序列化崩 / 其他编程错误。
+    instantTrace(sessionId, 'unexpected-throw', {
       name: err?.name,
       message: err?.message || String(err),
       waitedMs: Date.now() - sendStartedAt,
