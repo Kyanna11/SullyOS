@@ -188,7 +188,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
 
     const headerToneClass =
         acnh
-          ? 'bg-[#b6e08a]/95 backdrop-blur-md border-b-[3px] border-[#7cba4c] shadow-[0_4px_0_rgba(124,186,76,0.3)]'
+          ? 'bg-[#f3ecdc]/95 backdrop-blur-md border-b-[3px] border-[#e0d6c0] shadow-[0_3px_0_rgba(159,146,125,0.18)]'
           :
         headerStyle === 'gradient'
             ? 'bg-gradient-to-r from-primary/20 via-primary/10 to-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm'

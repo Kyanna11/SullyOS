@@ -17,8 +17,9 @@ const formatTime = (sec: number) => {
 };
 
 const NowPlayingSquareWidget: React.FC<{ contentColor: string }> = ({ contentColor }) => {
-  const { openApp } = useOS();
+  const { openApp, theme } = useOS();
   const { current, playing, progress, duration, togglePlay, nextSong, prevSong } = useMusic();
+  const acnh = theme.skin === 'animalcrossing'; // 动森：奶油卡片 + 薄荷进度
 
   const pct = duration > 0 ? (progress / duration) * 100 : 0;
   const hasSong = !!current;
@@ -38,7 +39,13 @@ const NowPlayingSquareWidget: React.FC<{ contentColor: string }> = ({ contentCol
     <div
       onClick={() => openApp(AppID.Music)}
       className="relative w-full h-full rounded-[1.75rem] overflow-hidden cursor-pointer animate-fade-in group transition-transform active:scale-[0.98] flex flex-col justify-between"
-      style={{
+      style={acnh ? {
+        background: 'rgb(247,243,223)',
+        border: '2px solid #e8e2d6',
+        boxShadow: '0 6px 18px rgba(61,52,40,0.12)',
+        padding: '12px',
+        color: contentColor,
+      } : {
         background: 'rgba(20,18,24,0.82)',
         border: '1px solid rgba(255,255,255,0.14)',
         boxShadow: '0 8px 30px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.07)',
@@ -123,12 +130,12 @@ const NowPlayingSquareWidget: React.FC<{ contentColor: string }> = ({ contentCol
         {/* 进度条 */}
         <div className="flex flex-col gap-0.5">
           <div className="h-[3px] w-full rounded-full overflow-hidden"
-            style={{ background: 'rgba(255,255,255,0.15)' }}>
+            style={{ background: acnh ? 'rgba(94,72,59,0.15)' : 'rgba(255,255,255,0.15)' }}>
             <div className="h-full rounded-full transition-[width] duration-150"
               style={{
                 width: `${pct}%`,
-                background: 'linear-gradient(90deg, #60a5fa, #c084fc)',
-                boxShadow: '0 0 6px rgba(192,132,252,0.55)',
+                background: acnh ? 'linear-gradient(90deg, #82D5BB, #6fba2c)' : 'linear-gradient(90deg, #60a5fa, #c084fc)',
+                boxShadow: acnh ? 'none' : '0 0 6px rgba(192,132,252,0.55)',
               }} />
           </div>
           <div className="flex justify-between text-[7.5px] uppercase font-medium opacity-50" style={{ letterSpacing: '0.15em' }}>

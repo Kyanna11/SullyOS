@@ -135,6 +135,7 @@ interface ScheduleHomeWidgetProps {
     character: CharacterProfile | null;
     contentColor?: string;
     onOpen: () => void;
+    acnh?: boolean;
 }
 
 export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
@@ -142,6 +143,7 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
     character,
     contentColor = '#ffffff',
     onOpen,
+    acnh = false,
 }) => {
     const currentIdx = schedule ? getCurrentSlotIndex(schedule.slots) : -1;
     const currentSlot = currentIdx >= 0 ? schedule!.slots[currentIdx] : null;
@@ -161,7 +163,12 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
         <button
             onClick={onOpen}
             className="w-full group text-left rounded-3xl overflow-hidden transition-transform duration-200 active:scale-[0.98] relative"
-            style={{
+            style={acnh ? {
+                background: 'rgb(247,243,223)',
+                border: '2px solid #e8e2d6',
+                boxShadow: '0 6px 18px rgba(61,52,40,0.12)',
+                color: contentColor,
+            } : {
                 background: 'rgba(255,255,255,0.08)',
                 backdropFilter: 'blur(24px) saturate(1.4)',
                 WebkitBackdropFilter: 'blur(24px) saturate(1.4)',
@@ -170,8 +177,8 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
                 color: contentColor,
             }}
         >
-            {/* Blurred avatar glow */}
-            {character?.avatar && (
+            {/* Blurred avatar glow（动森奶油底下省略，避免糊脏） */}
+            {!acnh && character?.avatar && (
                 <div
                     className="absolute inset-0 opacity-25 pointer-events-none"
                     style={{

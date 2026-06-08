@@ -263,7 +263,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     const isDiscordStyle = inputStyle === 'discord';
     const isPixelStyle = inputStyle === 'pixel' || chromeStyle === 'pixel';
     const shellClass = acnh
-        ? 'bg-[#eaf6d4]/95 backdrop-blur-md border-t-[3px] border-[#7cba4c] shadow-[0_-4px_0_rgba(124,186,76,0.2)]'
+        ? 'bg-[#f3ecdc]/95 backdrop-blur-md border-t-[3px] border-[#e0d6c0] shadow-[0_-3px_0_rgba(159,146,125,0.16)]'
         : chromeStyle === 'pixel'
         ? 'bg-[#eadfce] border-t-[3px] border-[#8f674a] shadow-[0_-4px_0_rgba(123,90,64,0.15)]'
         : chromeStyle === 'flat'
@@ -278,7 +278,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
           : 'w-11 h-11 shrink-0 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors';
     const inputWrapClass =
         acnh
-            ? 'bg-white border-2 border-[#9ed25f] rounded-full'
+            ? 'bg-white border-2 border-[#e0d6c0] rounded-full'
             :
         inputStyle === 'rounded'
             ? 'bg-slate-100 rounded-full'

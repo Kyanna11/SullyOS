@@ -225,16 +225,22 @@ const AppQuadGrid = React.memo(({ apps, openApp }: { apps: typeof INSTALLED_APPS
 });
 
 // 3c. Square image slot for pinwheel (bottom-right)
-const DesktopSquareImage = React.memo(({ image, contentColor, onClick }: {
+const DesktopSquareImage = React.memo(({ image, contentColor, onClick, acnh = false }: {
     image?: string,
     contentColor: string,
     onClick: () => void,
+    acnh?: boolean,
 }) => {
     return (
         <div
             onClick={onClick}
             className="relative w-full h-full rounded-[1.75rem] overflow-hidden cursor-pointer animate-fade-in transition-transform active:scale-[0.98]"
-            style={{
+            style={acnh ? {
+                background: image ? 'rgb(247,243,223)' : 'rgb(247,243,223)',
+                border: '2px solid #e8e2d6',
+                boxShadow: '0 6px 18px rgba(61,52,40,0.12)',
+                color: contentColor,
+            } : {
                 background: image ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.28)',
                 border: '1px solid rgba(255,255,255,0.18)',
                 boxShadow: '0 8px 30px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.07)',
@@ -270,7 +276,10 @@ const CALENDAR_WEEKDAYS = [
 ] as const;
 
 // 4. Widget Page Component (Calendar + Events)
-const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characters }: any) => {
+const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characters, acnh = false }: any) => {
+    // 动森：奶油卡片样式（替代暗色玻璃）
+    const acCard = acnh ? { background: 'rgb(247,243,223)', border: '2px solid #e8e2d6', boxShadow: '0 6px 18px rgba(61,52,40,0.12)' } : undefined;
+    const acDot = acnh ? '#6fba2c' : undefined;
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
@@ -304,10 +313,10 @@ const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characte
 
     return (
         <div className="w-full flex-shrink-0 snap-center snap-always flex flex-col px-6 pt-24 pb-8 space-y-6 h-full overflow-y-auto no-scrollbar">
-              <div className="bg-white/25 rounded-3xl p-6 border border-white/25 shadow-xl">
+              <div className={`rounded-3xl p-6 ${acnh ? 'shadow-sm' : 'bg-white/25 border border-white/25 shadow-xl'}`} style={acCard}>
                   <div className="flex justify-between items-center mb-4" style={{ color: contentColor }}>
                       <h3 className="text-xl font-bold tracking-widest">{monthName} {currentYear}</h3>
-                      <div onClick={() => openApp('schedule')} className="bg-white/20 p-2 rounded-full cursor-pointer hover:bg-white/40 transition-colors">
+                      <div onClick={() => openApp('schedule')} className={`p-2 rounded-full cursor-pointer transition-colors ${acnh ? 'bg-[#82D5BB]/30 hover:bg-[#82D5BB]/50' : 'bg-white/20 hover:bg-white/40'}`}>
                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                       </div>
                   </div>
@@ -325,23 +334,23 @@ const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characte
                           
                           return (
                               <div key={day} className="flex flex-col items-center justify-center h-8 relative">
-                                  <div 
-                                    className={`w-8 h-8 flex items-center justify-center rounded-full text-sm font-medium ${isToday ? 'bg-white text-black font-bold shadow-lg' : 'opacity-80'}`}
-                                    style={isToday ? {} : { color: contentColor }}
+                                  <div
+                                    className={`w-8 h-8 flex items-center justify-center rounded-full text-sm font-medium ${isToday ? (acnh ? 'text-white font-bold' : 'bg-white text-black font-bold shadow-lg') : 'opacity-80'}`}
+                                    style={isToday ? (acnh ? { background: '#19c8b9' } : {}) : { color: contentColor }}
                                   >
                                       {day}
                                   </div>
-                                  {hasEvent && <div className="w-1.5 h-1.5 bg-purple-400 rounded-full absolute bottom-0 shadow-sm border border-black/20"></div>}
+                                  {hasEvent && <div className="w-1.5 h-1.5 rounded-full absolute bottom-0 shadow-sm border border-black/20" style={{ background: acDot || '#c084fc' }}></div>}
                               </div>
                           );
                       })}
                   </div>
               </div>
 
-              <div className="bg-white/25 rounded-3xl p-5 border border-white/25 shadow-xl flex flex-col flex-1 min-h-[200px]">
+              <div className={`rounded-3xl p-5 flex flex-col flex-1 min-h-[200px] ${acnh ? 'shadow-sm' : 'bg-white/25 border border-white/25 shadow-xl'}`} style={acCard}>
                   <div className="flex items-center justify-between mb-4">
                       <h3 className="text-xs font-bold opacity-60 uppercase tracking-widest flex items-center gap-2" style={{ color: contentColor }}>
-                          <span className="w-2 h-2 bg-purple-400 rounded-full"></span> Upcoming Events
+                          <span className="w-2 h-2 rounded-full" style={{ background: acDot || '#c084fc' }}></span> Upcoming Events
                       </h3>
                       {eventPageCount > 1 && (
                           <div className="flex items-center gap-2 shrink-0" style={{ color: contentColor }}>
@@ -367,8 +376,8 @@ const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characte
                   </div>
                   <div className="space-y-3">
                       {upcomingEvents.length > 0 ? pagedEvents.map((anni: any) => (
-                          <div key={anni.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/10">
-                              <div className="w-10 h-10 shrink-0 bg-purple-500/20 rounded-lg flex flex-col items-center justify-center text-purple-200 border border-purple-500/30">
+                          <div key={anni.id} className={`flex items-center gap-3 p-3 rounded-xl ${acnh ? 'bg-[#efe7d4] border border-[#e0d6c0]' : 'bg-white/5 border border-white/10'}`}>
+                              <div className={`w-10 h-10 shrink-0 rounded-lg flex flex-col items-center justify-center ${acnh ? 'bg-[#82D5BB] text-white border border-[#6cc0a6]' : 'bg-purple-500/20 text-purple-200 border border-purple-500/30'}`}>
                                   <span className="text-[9px] opacity-70">{anni.date.split('-')[1]}</span>
                                   <span className="text-sm font-bold leading-none">{anni.date.split('-')[2]}</span>
                               </div>
@@ -648,6 +657,7 @@ const Launcher: React.FC = () => {
                                   character={scheduleChar}
                                   contentColor={contentColor}
                                   onOpen={() => setScheduleViewerOpen(true)}
+                                  acnh={acnh}
                               />
                           )}
                           <div className="grid grid-cols-2 gap-x-3 gap-y-5 w-full">
@@ -665,6 +675,7 @@ const Launcher: React.FC = () => {
                                       image={theme.launcherWidgets?.['dsq']}
                                       contentColor={contentColor}
                                       onClick={() => openApp(AppID.Appearance)}
+                                      acnh={acnh}
                                   />
                               </div>
                           </div>
@@ -740,6 +751,7 @@ const Launcher: React.FC = () => {
             openApp={openApp}
             anniversaries={anniversaries}
             characters={characters}
+            acnh={acnh}
           />
 
       </div>

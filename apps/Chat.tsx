@@ -1967,15 +1967,14 @@ const Chat: React.FC = () => {
               : {
                   backgroundImage: 'none',
                 };
-    // 动森彩蛋：整张聊天换成草地木屋色调（盖掉上面常规 chrome 计算）。角色自带背景图时仍尊重角色设置。
+    // 动森彩蛋：整张聊天换成温暖奶油纸（NookPhone 同款），细点纹理。角色自带背景图时仍尊重角色设置。
     const acnhRootClass = 'flex flex-col h-full overflow-hidden relative font-sans transition-[background-image,background-color] duration-500';
     const acnhRootStyle: React.CSSProperties = {
-        backgroundColor: '#dff0c8',
+        backgroundColor: '#F8F4E8',
         backgroundImage:
-            'radial-gradient(circle at 18% 12%, rgba(255,255,255,0.55), transparent 30%),'
-            + 'radial-gradient(circle at 82% 8%, rgba(255,247,176,0.6), transparent 26%),'
-            + 'radial-gradient(circle at 50% 100%, rgba(124,186,76,0.55), transparent 55%),'
-            + 'repeating-linear-gradient(135deg, rgba(124,186,76,0.06) 0 14px, rgba(143,200,91,0.06) 14px 28px)',
+            'radial-gradient(circle at 1px 1px, rgba(150,120,80,0.10) 1.5px, transparent 0),'
+            + 'radial-gradient(circle at 100% 0%, rgba(255,238,196,0.5), transparent 32%)',
+        backgroundSize: '18px 18px, 100% 100%',
     };
     const finalRootClass = acnh ? acnhRootClass : chatRootClass;
     const finalRootStyle = acnh && !char.chatBackground ? acnhRootStyle : chatRootStyle;
@@ -1990,21 +1989,21 @@ const Chat: React.FC = () => {
         >
              {activeTheme.customCss && <style>{activeTheme.customCss}</style>}
 
-             {/* 动森彩蛋：作用域 CSS 覆盖气泡，奶油木牌 AI 气泡 + 草绿用户气泡，绕开 MessageItem 复杂逻辑 */}
+             {/* 动森彩蛋：作用域 CSS 覆盖气泡——奶油 AI 气泡 + 蜜桃用户气泡，暖棕文字，绕开 MessageItem 复杂逻辑 */}
              {acnh && <style>{`
                 .sully-bubble-ai {
-                    background: #fffaf0 !important;
+                    background: #FFFBF2 !important;
                     color: #6b5435 !important;
-                    border: 2px solid #ecdcb8 !important;
+                    border: 2px solid #ece0c8 !important;
                     border-radius: 22px !important;
-                    box-shadow: 0 6px 14px -6px rgba(120,90,40,0.3) !important;
+                    box-shadow: 0 4px 10px -6px rgba(120,90,40,0.25) !important;
                 }
                 .sully-bubble-user {
-                    background: #9ed25f !important;
-                    color: #34431a !important;
-                    border: 2px solid #82bb46 !important;
+                    background: #F7C9A8 !important;
+                    color: #6b4a2f !important;
+                    border: 2px solid #efb993 !important;
                     border-radius: 22px !important;
-                    box-shadow: 0 6px 14px -6px rgba(100,140,40,0.35) !important;
+                    box-shadow: 0 4px 10px -6px rgba(150,100,60,0.3) !important;
                 }
              `}</style>}
 
