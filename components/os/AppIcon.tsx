@@ -49,7 +49,7 @@ const AppIcon: React.FC<AppIconProps> = React.memo(({ app, onClick, size = 'md',
           className={`${sizeClasses} relative flex items-center justify-center overflow-hidden`}
           style={{ backgroundColor: tileColor, borderRadius: '34%' }}
         >
-          <div className="w-[66%] h-[66%] relative">
+          <div className="w-[78%] h-[78%] relative">
             {getAcnhIcon(app.id)}
           </div>
         </div>
