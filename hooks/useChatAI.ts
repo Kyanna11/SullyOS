@@ -20,7 +20,8 @@ import type { DigestResult } from '../utils/memoryPalace';
 // 不再 import callMcdTool / normalizeMcdToolName / isMcdConfigured / 旧 prompt。
 import { MCD_PROPOSE_TOOL, autoFixProposalCodesByName } from '../utils/mcdToolBridge';
 // 瑞幸: 与麦当劳同构, 只读 LuckinMiniApp 快照注入 + propose_cart_items UI 钩子工具
-import { LUCKIN_PROPOSE_TOOL, autoFixProposalCodesByName as autoFixLuckinProposalCodesByName } from '../utils/luckinToolBridge';
+import { LUCKIN_PROPOSE_TOOL, autoFixProposalCodesByName as autoFixLuckinProposalCodesByName, fetchOpenAIToolsForLuckin, inferCardKind as inferLuckinCardKind } from '../utils/luckinToolBridge';
+import { callLuckinTool } from '../utils/luckinMcpClient';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
 import {
     isInstantConfigReady,
@@ -335,6 +336,8 @@ interface UseChatAIProps {
     mcdMiniAppRef?: MutableRefObject<import('../utils/mcdToolBridge').McdMiniAppSnapshot | undefined>;
     /** 瑞幸小程序当前快照 (cart/menu); 与麦当劳同构 */
     luckinMiniAppRef?: MutableRefObject<import('../utils/luckinToolBridge').LuckinMiniAppSnapshot | undefined>;
+    /** 瑞幸聊天点单模式 (点"瑞一杯"激活): 角色直接调真实 8 工具 + 注入定位/提示词 */
+    luckinChatRef?: MutableRefObject<import('../utils/luckinToolBridge').LuckinChatState | undefined>;
 }
 
 export const useChatAI = ({
@@ -353,6 +356,7 @@ export const useChatAI = ({
     updateCharacter,
     mcdMiniAppRef,
     luckinMiniAppRef,
+    luckinChatRef,
 }: UseChatAIProps) => {
     
     // 音乐上下文 — 用于聊天时注入"user 正在听什么 + 当前歌词窗口"
@@ -421,11 +425,11 @@ export const useChatAI = ({
     // 重建 listener (切角色), 避免 music 每秒 tick 一次都 remove+addEventListener.
     const emotionEvalDepsRef = useRef({
         userProfile, groups, emojis, categories, realtimeConfig, apiConfig,
-        translationConfig, music, mcdMiniAppRef, luckinMiniAppRef, evolvedNarrative,
+        translationConfig, music, mcdMiniAppRef, luckinMiniAppRef, luckinChatRef, evolvedNarrative,
     });
     emotionEvalDepsRef.current = {
         userProfile, groups, emojis, categories, realtimeConfig, apiConfig,
-        translationConfig, music, mcdMiniAppRef, luckinMiniAppRef, evolvedNarrative,
+        translationConfig, music, mcdMiniAppRef, luckinMiniAppRef, luckinChatRef, evolvedNarrative,
     };
 
     useEffect(() => {
@@ -666,6 +670,7 @@ export const useChatAI = ({
                 thinkingChain: { enabled: !!(char as any).showThinkingChain, customPrompt: (char as any).thinkingChainCustomPrompt },
                 mcdMiniSnap: mcdMiniOpen ? mcdMiniSnap : undefined,
                 luckinMiniSnap: luckinMiniOpen ? luckinMiniSnap : undefined,
+                luckinChat: luckinChatRef?.current?.active ? luckinChatRef.current : undefined,
             }));
             const systemPrompt = payload.systemPrompt;
             const cleanedApiMessages = payload.cleanedApiMessages;
@@ -785,6 +790,13 @@ export const useChatAI = ({
             } else if (payload.flags.luckinActive) {
                 baseReqBody.tools = [LUCKIN_PROPOSE_TOOL];
                 baseReqBody.tool_choice = 'auto';
+            } else if (payload.flags.luckinChatActive) {
+                // 瑞幸聊天点单: 给角色真实 8 个 MCP 工具, 自己去查门店/搜商品/定规格/算价
+                const luckinTools = await fetchOpenAIToolsForLuckin();
+                if (luckinTools && luckinTools.length) {
+                    baseReqBody.tools = luckinTools;
+                    baseReqBody.tool_choice = 'auto';
+                }
             }
 
             // ─── Instant Push 分支 ───
@@ -1035,6 +1047,83 @@ export const useChatAI = ({
                     });
                     updateTokenUsage(data, historyMsgCount, `luckin-propose-${it + 1}`);
                     if (!data.choices?.[0]?.message?.tool_calls?.length) break;
+                }
+            }
+
+            // 3.6 瑞幸聊天点单: 角色直接调真实 8 工具 (queryShopList → searchProductForMcp →
+            //     switchProduct → previewOrder)。结果落 luckin_card; previewOrder 落"结账卡"(可改量+扫码付);
+            //     createOrder 被拦截 —— 下单付款必须用户在结账卡上点。
+            if (payload.flags.luckinChatActive && data.choices?.[0]?.message?.tool_calls?.length) {
+                const MAX_LOOPS = 6;
+                let loopMessages = [...fullMessages];
+                const loc = luckinChatRef?.current;
+                for (let it = 0; it < MAX_LOOPS; it++) {
+                    const toolCalls = data.choices?.[0]?.message?.tool_calls;
+                    if (!toolCalls || !toolCalls.length) break;
+                    loopMessages.push({
+                        role: 'assistant',
+                        content: data.choices[0].message.content || '',
+                        tool_calls: toolCalls,
+                    } as any);
+                    for (const tc of toolCalls) {
+                        const fname: string = tc.function?.name || '';
+                        let args: any = {};
+                        try {
+                            const raw = tc.function?.arguments ?? tc.arguments;
+                            args = typeof raw === 'string' ? (raw ? JSON.parse(raw) : {}) : (raw || {});
+                        } catch (e) {
+                            console.warn('☕ [Luckin-Chat] 工具参数解析失败:', e);
+                        }
+                        // 经纬度兜底: 角色漏传就用激活时抓到的定位补上
+                        if (/queryShopList|createOrder/i.test(fname) && loc) {
+                            if (args.longitude == null && loc.longitude != null) args.longitude = loc.longitude;
+                            if (args.latitude == null && loc.latitude != null) args.latitude = loc.latitude;
+                        }
+                        // 拦截 createOrder: 不真下单, 引导走结账卡
+                        if (/create[-_]?order/i.test(fname)) {
+                            loopMessages.push({
+                                role: 'tool',
+                                tool_call_id: tc.id,
+                                content: '下单与支付由用户在结账卡上完成, 你不要调 createOrder。若还没出结账卡, 请先调 previewOrder 把订单算价展示出来, 然后用角色语气让用户去卡片上确认支付。',
+                            } as any);
+                            continue;
+                        }
+                        let result: any;
+                        try { result = await callLuckinTool(fname, args); }
+                        catch (e: any) { result = { success: false, error: e?.message || String(e) }; }
+
+                        const isPreview = /preview[-_]?order/i.test(fname);
+                        try {
+                            await DB.saveMessage({
+                                charId: char.id,
+                                role: 'assistant',
+                                type: 'luckin_card',
+                                content: fname,
+                                metadata: {
+                                    luckinToolName: fname,
+                                    luckinToolArgs: args,
+                                    luckinToolResult: result.success ? result.data : undefined,
+                                    luckinToolError: result.success ? undefined : result.error,
+                                    luckinToolRawText: result.rawText,
+                                    luckinCardKind: isPreview ? 'checkout' : inferLuckinCardKind(fname),
+                                    luckinLoc: (loc && loc.longitude != null) ? { longitude: loc.longitude, latitude: loc.latitude } : undefined,
+                                },
+                            } as any);
+                            setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
+                        } catch (e) { console.warn('☕ [Luckin-Chat] 存卡片失败:', e); }
+
+                        const toolMsg = result.success
+                            ? `工具 ${fname} 成功。结果(截断): ${(() => { try { return JSON.stringify(result.data).slice(0, 1500); } catch { return String(result.data).slice(0, 800); } })()}`
+                            : `工具 ${fname} 失败: ${result.error}`;
+                        loopMessages.push({ role: 'tool', tool_call_id: tc.id, content: toolMsg } as any);
+                    }
+                    // 继续让角色多步推进 (保留 tools, 允许 query→search→preview 连续走)
+                    const followBody = { ...baseReqBody, messages: loopMessages };
+                    data = await safeFetchJson(`${baseUrl}/chat/completions`, {
+                        method: 'POST', headers,
+                        body: JSON.stringify(followBody)
+                    });
+                    updateTokenUsage(data, historyMsgCount, `luckin-chat-${it + 1}`);
                 }
             }
 

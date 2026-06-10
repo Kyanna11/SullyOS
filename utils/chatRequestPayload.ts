@@ -19,8 +19,8 @@ import { buildHtmlPrompt } from './htmlPrompt';
 import { buildThinkingChainPrompt } from './thinkingChainPrompt';
 import { buildMcdMiniAppContextBlock } from './mcdToolBridge';
 import type { McdMiniAppSnapshot } from './mcdToolBridge';
-import { buildLuckinMiniAppContextBlock } from './luckinToolBridge';
-import type { LuckinMiniAppSnapshot } from './luckinToolBridge';
+import { buildLuckinMiniAppContextBlock, buildLuckinChatSystemBlock } from './luckinToolBridge';
+import type { LuckinMiniAppSnapshot, LuckinChatState } from './luckinToolBridge';
 import type { MusicCfg, Song, LyricLine, MusicPlaybackSnapshot } from '../context/MusicContext';
 import { isPromptBuildSkipped } from './devDebug';
 
@@ -70,6 +70,8 @@ export interface BuildChatPayloadInput {
     thinkingChain?: { enabled: boolean; customPrompt?: string };
     mcdMiniSnap?: McdMiniAppSnapshot;
     luckinMiniSnap?: LuckinMiniAppSnapshot;
+    /** 瑞幸聊天点单模式 (点"瑞一杯"激活, 角色直接调真实工具) */
+    luckinChat?: LuckinChatState;
 }
 
 export interface BuildChatPayloadResult {
@@ -84,6 +86,7 @@ export interface BuildChatPayloadResult {
         bilingualActive: boolean;
         mcdActive: boolean;
         luckinActive: boolean;
+        luckinChatActive: boolean;
         htmlActive: boolean;
         thinkingActive: boolean;
         promptBuildSkipped: boolean;
@@ -161,7 +164,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     const {
         char, userProfile, groups, emojis, categories, historyMsgs, contextLimit,
         realtimeConfig, innerState,
-        translationConfig, htmlMode, thinkingChain, mcdMiniSnap, luckinMiniSnap,
+        translationConfig, htmlMode, thinkingChain, mcdMiniSnap, luckinMiniSnap, luckinChat,
     } = input;
     const recentMsgsHint = input.recentMsgsHint ?? historyMsgs;
 
@@ -177,6 +180,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
                 bilingualActive: false,
                 mcdActive: false,
                 luckinActive: false,
+                luckinChatActive: false,
                 htmlActive: false,
                 thinkingActive: false,
                 promptBuildSkipped: true,
@@ -276,6 +280,15 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         }
     }
 
+    // ── 9c. 瑞幸聊天点单模式 (角色直接调真实工具) ──
+    const luckinChatActive = !!luckinChat?.active;
+    if (luckinChatActive) {
+        const block = buildLuckinChatSystemBlock(luckinChat, recentMsgsHint, userProfile?.name || '用户');
+        if (block) {
+            systemPrompt += block;
+        }
+    }
+
     // ── 10. 组装 fullMessages + 末尾双语 reminder ─────────
     const fullMessages: Array<{ role: string; content: any }> = [
         { role: 'system', content: systemPrompt },
@@ -292,6 +305,6 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         systemPrompt,
         cleanedApiMessages,
         fullMessages,
-        flags: { bilingualActive, mcdActive, luckinActive, htmlActive, thinkingActive, promptBuildSkipped: false },
+        flags: { bilingualActive, mcdActive, luckinActive, luckinChatActive, htmlActive, thinkingActive, promptBuildSkipped: false },
     };
 }

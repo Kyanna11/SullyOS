@@ -167,6 +167,8 @@ const Chat: React.FC = () => {
     // 小程序快照 ref: MiniApp 状态变化时塞进来, useChatAI 在 build system prompt 时读取并注入
     const mcdMiniAppRef = useRef<import('../utils/mcdToolBridge').McdMiniAppSnapshot | undefined>(undefined);
     const luckinMiniAppRef = useRef<import('../utils/luckinToolBridge').LuckinMiniAppSnapshot | undefined>(undefined);
+    // 瑞幸聊天点单模式 (点"瑞一杯"激活: 角色直接调真实工具, 注入定位)
+    const luckinChatRef = useRef<import('../utils/luckinToolBridge').LuckinChatState | undefined>(undefined);
 
     // --- Initialize Hook ---
     const { isTyping, recallStatus, searchStatus, diaryStatus, emotionStatus, memoryPalaceStatus, memoryPalaceResult, setMemoryPalaceResult, lastDigestResult, setLastDigestResult, lastTokenUsage, tokenBreakdown, setLastTokenUsage, triggerAI, startProactiveChat, stopProactiveChat, isProactiveActive } = useChatAI({
@@ -186,6 +188,7 @@ const Chat: React.FC = () => {
         memoryPalaceConfig,
         mcdMiniAppRef,
         luckinMiniAppRef,
+        luckinChatRef,
         updateCharacter,
     });
 
@@ -817,15 +820,15 @@ const Chat: React.FC = () => {
             return;
         }
 
-        // 用户手打"瑞幸请求" → 拉起瑞幸点单小程序 (与麦当劳同构)
+        // 用户手打"瑞一杯" → 激活角色瑞幸点单模式 (注入提示词+工具+定位, 角色自己点)
         if (!customContent && type === 'text' && text === LUCKIN_ACTIVATE_TRIGGER) {
             setInput(''); localStorage.removeItem(draftKey);
-            if (!isLuckinConfigured()) {
-                addToast('请先到设置 → 瑞幸 启用并填入 MCP Token', 'info');
-                return;
-            }
-            setLuckinAppOpen(true);
-            setShowPanel('none');
+            activateLuckin();
+            return;
+        }
+        if (!customContent && type === 'text' && text === LUCKIN_DEACTIVATE_TRIGGER) {
+            setInput(''); localStorage.removeItem(draftKey);
+            deactivateLuckin();
             return;
         }
 
@@ -975,10 +978,10 @@ const Chat: React.FC = () => {
                 addToast('请先到设置 → 瑞幸 启用并填入 MCP Token', 'info');
                 break;
             case 'luckin-request':
-                setLuckinAppOpen(true);
+                activateLuckin();
                 break;
             case 'luckin-end':
-                handleSendText(LUCKIN_DEACTIVATE_TRIGGER, 'text', { luckinDeactivate: true });
+                deactivateLuckin();
                 break;
             case 'html-mode-toggle': {
                 if (!char) break;
@@ -1011,10 +1014,32 @@ const Chat: React.FC = () => {
     // mcdMiniAppRef 声明在文件靠前 (传给 useChatAI), 这里仅占位
     const mcdConfiguredFlag = useMemo(() => isMcdConfigured(), [showPanel, mcdActivated]);
 
-    // 瑞幸: 与麦当劳同构
-    const luckinActivated = useMemo(() => isLuckinActivatedInMessages(messages), [messages]);
-    const [luckinAppOpen, setLuckinAppOpen] = useState(false);
+    // 瑞幸聊天点单模式: 激活态用 React state (临时会话态, 不落库)
+    const [luckinMode, setLuckinMode] = useState(false);
+    const luckinActivated = luckinMode;
+    const [luckinAppOpen, setLuckinAppOpen] = useState(false); // 旧小程序壳, 现已不主动开
     const luckinConfiguredFlag = useMemo(() => isLuckinConfigured(), [showPanel, luckinActivated]);
+
+    const activateLuckin = useCallback(() => {
+        if (!isLuckinConfigured()) { addToast('请先到设置 → 瑞幸 启用并填入 MCP Token', 'info'); return; }
+        luckinChatRef.current = { active: true };
+        setLuckinMode(true);
+        setShowPanel('none');
+        addToast('瑞一杯已开启 ☕ 跟 ta 说想喝什么', 'info');
+        // 抓一次定位, 注入给角色 (queryShopList/createOrder 要经纬度)
+        if (typeof navigator !== 'undefined' && navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => { luckinChatRef.current = { active: true, longitude: pos.coords.longitude, latitude: pos.coords.latitude }; },
+                () => { /* 定位失败: 保持激活, 角色会问你在哪个城市 */ },
+                { enableHighAccuracy: true, timeout: 8000 }
+            );
+        }
+    }, [addToast]);
+
+    const deactivateLuckin = useCallback(() => {
+        luckinChatRef.current = { active: false };
+        setLuckinMode(false);
+    }, []);
 
     // 用户在菜单卡里点"发送给角色"时, 把购物车作为 user 消息插入
     const handleMcdSendCart = useCallback(async (items: import('../components/chat/McdCard').McdCartItem[]) => {
@@ -2690,7 +2715,7 @@ const Chat: React.FC = () => {
                             🦌 瑞一杯进行中
                         </div>
                         <button
-                          onClick={() => handleSendText(LUCKIN_DEACTIVATE_TRIGGER, 'text', { luckinDeactivate: true })}
+                          onClick={deactivateLuckin}
                           className="px-2.5 py-0.5 bg-[#0B1F3A]/10 text-[#0B1F3A] rounded-full text-[11px] font-bold active:scale-95"
                         >
                           结束

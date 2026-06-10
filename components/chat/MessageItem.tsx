@@ -6,6 +6,7 @@ import { Message, ChatTheme } from '../../types';
 import { tryParseLifeSimResetCard } from '../../utils/lifeSimChatCard';
 import McdCard from './McdCard';
 import LuckinCard from './LuckinCard';
+import LuckinCheckoutCard from './LuckinCheckoutCard';
 
 // 思考链卡片支持的 4 种风格预设 — 同时被 MessageItem 与 ThinkingChainSettingsModal 复用
 export type ThinkingChainStyleId = 'echo' | 'whisper' | 'minimal' | 'custom';
@@ -1470,7 +1471,18 @@ const MessageItem = React.memo(({
                 </div>
             );
         }
-        // 老的 luckin_card (LLM 直接调工具残留 / 无 kind), 走 LuckinCard 渲染
+        // 结账卡 (聊天点单 previewOrder 的终点): 可改数量 + 直接扫码支付
+        if (kind === 'checkout' && meta.luckinToolResult) {
+            return commonLayout(
+                <LuckinCheckoutCard
+                    deptId={meta.luckinToolArgs?.deptId}
+                    args={meta.luckinToolArgs}
+                    preview={meta.luckinToolResult}
+                    loc={meta.luckinLoc}
+                />
+            );
+        }
+        // 工具结果卡 (门店/商品/订单) 或老的 luckin_card → 走 LuckinCard 渲染
         return commonLayout(
             <LuckinCard
                 toolName={meta.luckinToolName || m.content || 'luckin_tool'}

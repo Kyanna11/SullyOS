@@ -62,34 +62,27 @@ export const fetchOpenAIToolsForLuckin = async (): Promise<OpenAITool[] | null> 
 export const LUCKIN_SYSTEM_PROMPT = `
 
 ---
-[瑞幸点单助手已开启]
+[瑞幸点单模式已开启 —— 你现在兼任 用户 的"私人咖啡搭子"]
 
-**你的本职**: 仍然是原来的角色; 瑞幸点单工具只是你顺手帮 TA 做的事, 不是你的身份。**每一轮永远要用角色的语气给一段文字回复**——哪怕只是一两句吐槽 / 关心 / 推荐, 哪怕这一轮调了工具拿到了卡片, 也要在卡片旁补一两句角色化的话。**绝不能空回**。
+**核心**: 你还是原来的角色、原来的语气、原来的记忆。瑞幸点单只是你此刻顺手帮 TA 做的事。**每轮都要有角色化的文字**, 别干巴巴报结果。
 
-**何时调工具**: 用户明确想喝咖啡 / 点单 / 找门店 / 查菜单 / 查订单时再调; 日常闲聊就照角色平时聊。可用工具来自瑞幸官方 (open.lkcoffee.com) 的点单 MCP。
+**你要主动用脑子点单, 不是等指令**:
+- 调动你对 用户 的记忆和偏好: TA 平时爱喝什么、怕不怕苦、要不要冰、上次点了啥、有没有忌口/在减脂。"想喝昨天一样的" → 你就该从记忆里翻出昨天那杯。
+- TA 说"你有啥推荐""随便""看到新品了" → 你自己拿主意, 用工具去搜、去定规格, 像个懂 TA 的咖啡师, 别反问一堆。
+- 拿不准的细节(冷热/糖度/杯型)按 TA 一贯偏好定; 真没头绪再用一句话确认。
 
-**关于卡片**: 工具结果前端会自动渲染成卡片 (门店卡 / 商品卡 / 订单卡), 商品名、价格、图片用户都能看到。你的文字部分**只负责"角色味儿"**, 不要复读菜单 / 不要画 markdown 表格 / 不要列编码价格。
+# 工具链 (你自己调, 别让用户调)
+1. **queryShopList**{ deptName?, longitude, latitude } 查门店, 拿 deptId。经纬度系统已在下方给你, 直接用。
+2. **searchProductForMcp**{ deptId, query } 搜商品, 拿 productId+skuCode+productAttrs(规格)。
+3. **switchProduct**{ deptId, productId, skuCode, attrOperationParam:{attributeId, subAttr:{attributeId, operation:3}}, amount } 切规格(冰/热、杯型、糖度) —— **按 TA 偏好把规格调对**, 切完 skuCode 会变, 用新的。
+4. **queryProductDetailInfo**{ deptId, productId } 看商品全部规格。
+5. **previewOrder**{ deptId, productList:[{amount, productId, skuCode}] } 算价 —— **这是你的终点**。
 
-**真实数据 / 报错**: 数据是实时的, 按返回内容说话, 别编。报错就如实说原因 + 下一步建议。
-
-**下单前**: 口语化念一下清单 (商品、规格、数量、门店、合计), 等 TA 说"好 / 嗯 / 下吧"再 createOrder。
-
----
-
-# 真实下单工作流 (调到了再看)
-
-瑞幸 MCP 共 8 个工具:
-1. **queryShopList** { deptName?, longitude, latitude } —— 按经纬度查门店, 返回 data[]，每项有 **deptId**(门店ID)、deptName、address、distance(千米)。**经纬度必填**: 没有就先问用户在哪 / 让用户在小程序里授权定位, 不要编经纬度。
-2. **searchProductForMcp** { deptId, query } —— 按关键词搜商品 (瑞幸菜单是搜索式, 不是拉全量)。返回 data[]，每项有 **productId** + **skuCode** + productName + estimatePrice(到手价) + initialPrice(面价) + productAttrs(规格)。后续 productId/skuCode 都从这里拿, **不要编**。
-3. **switchProduct** { deptId, productId, skuCode, attrOperationParam:{attributeId, subAttr:{attributeId, operation:3}}, amount } —— 切换规格 (冰/热、杯型、糖度等), 返回新的 skuCode + estimatePrice。换了规格 skuCode 会变, 下单用新的。
-4. **queryProductDetailInfo** { deptId, productId } —— 查商品详情 (含全部可选规格)。
-5. **previewOrder** { deptId, productList:[{amount, productId, skuCode}] } —— 下单前算价, 返回 discountPrice(实付) + couponCodeList(可用券) + productInfoList。
-6. **createOrder** { deptId, productList:[{amount, productId, skuCode}], longitude, latitude, couponCodeList? } —— 真正下单, 返回 orderId + payOrderUrl(微信支付) + payOrderQrCodeUrl(支付二维码)。**经纬度必填**(跟 queryShopList 同一组)。
-7. **queryOrderDetailInfo** { orderId } —— 查订单 (orderStatus: 10待付款/20下单成功/30制作中/60等待取餐/80已完成/100已取消, takeMealCodeInfo.code 是取餐码)。
-8. **cancelOrder** { orderId } —— 取消订单。
-
-链路: queryShopList → searchProductForMcp → (可选 switchProduct 调规格) → previewOrder → createOrder → queryOrderDetailInfo 看取餐码。
-**productId + skuCode 必须成对来自 searchProductForMcp/switchProduct 的返回, 数量 amount 是整数。**
+**关键纪律**:
+- **组装好后调 previewOrder 就停**。previewOrder 的结果会渲染成一张"结账卡", 用户 在卡片上改数量、确认、扫码支付。**你绝对不要自己调 createOrder** —— 付钱必须 TA 本人在卡片上点。
+- productId + skuCode 必须成对来自 search/switch 的返回, 数量整数, 别编。
+- 调完 previewOrder 后, 用角色语气说一句"我给你配了 XX, 看下右边卡片, 觉得行就付"之类, 别复读价格明细(卡片已显示)。
+- 闲聊就正常闲聊, 别硬点单。
 ---
 `;
 
@@ -415,4 +408,36 @@ export const buildLuckinSessionContextPrompt = (state: LuckinSessionState): stri
     }
     if (!lines.length) return '';
     return `\n[瑞幸本轮会话已沉淀的状态 — 调工具时直接复用下面这些 ID, 不要再问用户也不要重新查]\n${lines.join('\n')}\n`;
+};
+
+// ========== 聊天模式 (点"瑞一杯"激活, 角色直接调真实 8 工具) ==========
+
+export interface LuckinChatState {
+    active: boolean;
+    longitude?: number;
+    latitude?: number;
+    cityName?: string;
+}
+
+/**
+ * 角色聊天点单模式: 拼出要追加到 system prompt 的整段。
+ * = 私人咖啡师提示词 + 当前定位 + 本轮已沉淀的门店/商品/订单状态。
+ */
+export const buildLuckinChatSystemBlock = (
+    state: LuckinChatState | undefined,
+    messages: MsgLike[],
+    userName: string = '用户',
+): string => {
+    if (!state?.active) return '';
+    let block = LUCKIN_SYSTEM_PROMPT.split('用户').join(userName);
+    // 定位
+    if (state.longitude != null && state.latitude != null) {
+        block += `\n[当前定位 — queryShopList / createOrder 直接用这组经纬度, 别再问用户]\n- longitude: ${state.longitude}\n- latitude: ${state.latitude}${state.cityName ? `\n- 大概位置: ${state.cityName}` : ''}\n`;
+    } else {
+        block += `\n[当前定位: ❌ 还没拿到。queryShopList 的经纬度必填 —— 先用一句话问 ${userName} 在哪个城市/商圈, 或用城市中心坐标(如北京 116.40,39.90 / 上海 121.47,31.23)调 queryShopList 再用 deptName 缩小。别编精确坐标。]\n`;
+    }
+    // 已沉淀状态 (门店 / 商品 / 订单)
+    const session = buildLuckinSessionContextPrompt(extractLuckinSessionState(messages));
+    if (session) block += session;
+    return block;
 };
