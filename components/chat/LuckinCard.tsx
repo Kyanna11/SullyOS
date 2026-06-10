@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { luckinItemEmoji } from '../../utils/luckinEmoji';
+import PayQr from '../luckin/PayQr';
 
 /**
  * 瑞幸 MCP 工具结果卡片 (与 McdCard 同构, 瑞幸蓝主题)
@@ -215,7 +216,9 @@ const OrderSummary: React.FC<{ data: any }> = ({ data }) => {
                 </div>
             )}
             {(payUrl || qrUrl) && (
-                <a href={payUrl || qrUrl} target="_blank" rel="noreferrer" className="block text-center mt-1 px-3 py-1.5 bg-[#0B1F3A] text-white text-[11px] font-bold rounded-lg active:scale-95 transition-transform">去支付 →</a>
+                <div className="mt-1 flex flex-col items-center bg-white/60 rounded-lg p-2 border border-[#EFE9DC]">
+                    <PayQr payUrl={payUrl} qrImageUrl={qrUrl} size={132} />
+                </div>
             )}
         </div>
     );

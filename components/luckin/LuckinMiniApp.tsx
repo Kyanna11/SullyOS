@@ -21,6 +21,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { callLuckinTool, isLuckinConfigured } from '../../utils/luckinMcpClient';
 import { autoFixProposalCodesByName } from '../../utils/luckinToolBridge';
 import { luckinItemEmoji } from '../../utils/luckinEmoji';
+import PayQr from './PayQr';
 
 interface LuckinMiniAppProps {
     open: boolean;
@@ -693,13 +694,14 @@ const SuccessStep: React.FC<{ ctx: OrderContext; orderResult: any; onClose: () =
                         <div><div className="text-[10px] text-slate-400">取餐码</div><div className="text-[20px] font-black tracking-widest text-[#B8860B]">{takeCode}</div></div>
                     )}
                 </div>
-            </div>
-            <div className="border-t border-[#DDD3BC] bg-gradient-to-r from-[#EFE9DC] to-[#E7DFC9] px-3 py-2.5 flex items-center gap-2">
-                {(payUrl || qrUrl) && (
-                    <a href={payUrl || qrUrl} target="_blank" rel="noreferrer"
-                        className="flex-1 text-center px-3 py-2.5 bg-[#0B1F3A] text-white text-[12px] font-bold rounded-xl shadow active:scale-95">去支付 →</a>
+                {needPay && (payUrl || qrUrl) && (
+                    <div className="bg-white rounded-xl border border-[#EFE9DC] p-3 flex flex-col items-center">
+                        <PayQr payUrl={payUrl} qrImageUrl={qrUrl} />
+                    </div>
                 )}
-                <button onClick={onClose} className={`${(payUrl || qrUrl) ? 'shrink-0' : 'flex-1'} px-3 py-2.5 bg-white border border-[#DDD3BC] text-[#0B1F3A] text-[12px] font-bold rounded-xl active:scale-95`}>完成</button>
+            </div>
+            <div className="border-t border-[#DDD3BC] bg-gradient-to-r from-[#EFE9DC] to-[#E7DFC9] px-3 py-2.5">
+                <button onClick={onClose} className="w-full px-3 py-2.5 bg-white border border-[#DDD3BC] text-[#0B1F3A] text-[12px] font-bold rounded-xl active:scale-95">完成</button>
             </div>
         </div>
     );
