@@ -232,28 +232,51 @@ const PhoneModal: React.FC<{
     const latestBeat = episodes[0]?.beats.find(b => b.charId === ownerId);
     const nameById = (id: string) => members.find(m => m.id === id)?.name || '?';
 
-    // 动态：跨轮聚合该角色发过的所有 posts（新的在上）
+    // 归档线：sim 模式结卷后，被卷进编年史的轮次（round ≤ 此值）不再在手机里展示
+    const archivedClock = world.simSummarizedClock || 0;
+    const archivedDays = Math.floor(archivedClock / 3);
+
+    // 动态：跨轮聚合该角色发过的 posts（新的在上；归档的不再显示）
     const feed = useMemo(() => {
         const out: { storyTime: string; location: string; post: string; round: number }[] = [];
         for (const ep of episodes) {
+            if (ep.round <= archivedClock) continue;
             const b = ep.beats.find(x => x.charId === ownerId);
             for (const p of b?.phone?.posts || []) out.push({ storyTime: ep.storyTime, location: b!.location, post: p, round: ep.round });
         }
         return out;
-    }, [episodes, ownerId]);
+    }, [episodes, ownerId, archivedClock]);
 
-    // 备忘录：跨轮聚合（私人，只有屏幕外的玩家翻得到）
+    // 备忘录：跨轮聚合（私人，只有屏幕外的玩家翻得到；归档的不再显示）
     const memos = useMemo(() => {
         const out: { storyTime: string; text: string }[] = [];
         for (const ep of episodes) {
+            if (ep.round <= archivedClock) continue;
             const b = ep.beats.find(x => x.charId === ownerId);
             for (const m of b?.memo || []) out.push({ storyTime: ep.storyTime, text: m });
         }
         return out;
-    }, [episodes, ownerId]);
+    }, [episodes, ownerId, archivedClock]);
 
     const dmCount = dmThreads.reduce((s, t) => s + t.messages.length, 0);
     const activeDm = dmThreads[Math.min(dmIdx, Math.max(0, dmThreads.length - 1))];
+
+    // 动态/备忘翻页（每页 8）；私聊折叠（默认只看最近 30 条）
+    const PER = 8;
+    const [feedPage, setFeedPage] = useState(0);
+    const [memoPage, setMemoPage] = useState(0);
+    const DM_FOLD = 30;
+    const [dmExpanded, setDmExpanded] = useState(false);
+    useEffect(() => { setDmExpanded(false); }, [dmIdx]);
+
+    // 把手机内容（动态）转发到「和 ta 的聊天」里
+    const [sharedKeys, setSharedKeys] = useState<Set<string>>(new Set());
+    const shareToChat = async (key: string, text: string) => {
+        try {
+            await DB.saveMessage({ charId: ownerId, role: 'assistant', type: 'text', content: `【家园 · ${world.name}】${ownerName} 发了条动态：\n${text}` });
+            setSharedKeys(prev => new Set(prev).add(key));
+        } catch { /* ignore */ }
+    };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
@@ -293,25 +316,45 @@ const PhoneModal: React.FC<{
                         <div className="flex-1 overflow-y-auto no-scrollbar px-3.5 py-3 space-y-2">
                             {tab === 'feed' && (
                                 feed.length === 0
-                                    ? <div className="text-center text-[11px] text-white/40 pt-16">还没发过动态</div>
-                                    : feed.map((f, i) => (
-                                        <div key={i} className="rounded-2xl bg-white/95 p-3 shadow-sm">
-                                            <div className="flex items-center gap-2">
-                                                {avatar
-                                                    ? <img src={avatar} className="w-6 h-6 rounded-full object-cover" alt="" />
-                                                    : <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">{ownerName.slice(0, 1)}</div>}
-                                                <div>
-                                                    <div className="text-[10.5px] font-bold text-slate-800 leading-none">{ownerName}</div>
-                                                    <div className="text-[8.5px] text-slate-400 mt-0.5">{f.storyTime} · 来自{f.location}</div>
+                                    ? <div className="text-center text-[11px] text-white/40 pt-16">还没发过动态{archivedDays > 0 ? `（更早 ${archivedDays} 天已归档进编年史）` : ''}</div>
+                                    : (() => {
+                                        const pages = Math.max(1, Math.ceil(feed.length / PER));
+                                        const p = Math.min(feedPage, pages - 1);
+                                        return (<>
+                                            {p === 0 && archivedDays > 0 && <div className="text-center text-[9px] text-white/35 pb-1">更早 {archivedDays} 天已归档进编年史</div>}
+                                            {feed.slice(p * PER, p * PER + PER).map((f, i) => (
+                                                <div key={i} className="rounded-2xl bg-white/95 p-3 shadow-sm">
+                                                    <div className="flex items-center gap-2">
+                                                        {avatar
+                                                            ? <img src={avatar} className="w-6 h-6 rounded-full object-cover" alt="" />
+                                                            : <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">{ownerName.slice(0, 1)}</div>}
+                                                        <div>
+                                                            <div className="text-[10.5px] font-bold text-slate-800 leading-none">{ownerName}</div>
+                                                            <div className="text-[8.5px] text-slate-400 mt-0.5">{f.storyTime} · 来自{f.location}</div>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-[11.5px] leading-[1.6] text-slate-700 mt-2 whitespace-pre-wrap">{f.post}</p>
+                                                    <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center gap-3 text-slate-400">
+                                                        <span className="flex items-center gap-0.5 text-[9px]"><Heart size={11} /> 喜欢</span>
+                                                        <span className="flex items-center gap-0.5 text-[9px]"><ChatCircleDots size={11} /> 评论</span>
+                                                        {(() => { const key = `${f.round}_${i}`; const done = sharedKeys.has(key); return (
+                                                            <button onClick={() => !done && shareToChat(key, f.post)} disabled={done}
+                                                                className={`ml-auto flex items-center gap-0.5 text-[9px] font-bold ${done ? 'text-emerald-500' : 'text-sky-500 active:scale-95'}`}>
+                                                                <PaperPlaneTilt size={11} weight={done ? 'fill' : 'regular'} />{done ? '已发到聊天' : '发到聊天'}
+                                                            </button>
+                                                        ); })()}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            <p className="text-[11.5px] leading-[1.6] text-slate-700 mt-2 whitespace-pre-wrap">{f.post}</p>
-                                            <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center gap-3 text-slate-400">
-                                                <span className="flex items-center gap-0.5 text-[9px]"><Heart size={11} /> 喜欢</span>
-                                                <span className="flex items-center gap-0.5 text-[9px]"><ChatCircleDots size={11} /> 评论</span>
-                                            </div>
-                                        </div>
-                                    ))
+                                            ))}
+                                            {pages > 1 && (
+                                                <div className="flex items-center justify-center gap-3 pt-1">
+                                                    <button onClick={() => setFeedPage(Math.max(0, p - 1))} disabled={p === 0} className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-white/10 text-white/70 disabled:opacity-30">上一页</button>
+                                                    <span className="text-[10px] text-white/50 tabular-nums">{p + 1}/{pages}</span>
+                                                    <button onClick={() => setFeedPage(Math.min(pages - 1, p + 1))} disabled={p >= pages - 1} className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-white/10 text-white/70 disabled:opacity-30">下一页</button>
+                                                </div>
+                                            )}
+                                        </>);
+                                    })()
                             )}
                             {tab === 'dm' && (
                                 dmThreads.length === 0
@@ -331,11 +374,20 @@ const PhoneModal: React.FC<{
                                                     })}
                                                 </div>
                                             )}
-                                            {activeDm && (
-                                                <div className="space-y-1.5">
-                                                    <ThreadBubbles thread={activeDm} selfId={ownerId} members={members} npcs={world.npcs} />
-                                                </div>
-                                            )}
+                                            {activeDm && (() => {
+                                                const folded = !dmExpanded && activeDm.messages.length > DM_FOLD;
+                                                const shownThread = folded ? { ...activeDm, messages: activeDm.messages.slice(-DM_FOLD) } : activeDm;
+                                                return (
+                                                    <div className="space-y-1.5">
+                                                        {folded && (
+                                                            <button onClick={() => setDmExpanded(true)} className="w-full text-[10px] font-bold py-1.5 rounded-full bg-white/10 text-white/60 active:scale-95 transition-transform">
+                                                                展开更早的 {activeDm.messages.length - DM_FOLD} 条
+                                                            </button>
+                                                        )}
+                                                        <ThreadBubbles thread={shownThread} selfId={ownerId} members={members} npcs={world.npcs} />
+                                                    </div>
+                                                );
+                                            })()}
                                         </>
                                     )
                             )}
@@ -352,13 +404,26 @@ const PhoneModal: React.FC<{
                             {tab === 'memo' && (
                                 memos.length === 0
                                     ? <div className="text-center text-[11px] text-white/40 pt-16">备忘录是空的</div>
-                                    : memos.map((m, i) => (
-                                        <div key={i} className="rounded-xl bg-amber-50/95 border-l-4 border-amber-300 px-3 py-2 shadow-sm"
-                                            style={{ transform: `rotate(${i % 2 === 0 ? '-0.4' : '0.4'}deg)` }}>
-                                            <div className="text-[8.5px] text-amber-500 font-bold">{m.storyTime}</div>
-                                            <p className="text-[11.5px] leading-[1.55] text-amber-950 mt-0.5 whitespace-pre-wrap">{m.text}</p>
-                                        </div>
-                                    ))
+                                    : (() => {
+                                        const pages = Math.max(1, Math.ceil(memos.length / PER));
+                                        const p = Math.min(memoPage, pages - 1);
+                                        return (<>
+                                            {memos.slice(p * PER, p * PER + PER).map((m, i) => (
+                                                <div key={i} className="rounded-xl bg-amber-50/95 border-l-4 border-amber-300 px-3 py-2 shadow-sm"
+                                                    style={{ transform: `rotate(${i % 2 === 0 ? '-0.4' : '0.4'}deg)` }}>
+                                                    <div className="text-[8.5px] text-amber-500 font-bold">{m.storyTime}</div>
+                                                    <p className="text-[11.5px] leading-[1.55] text-amber-950 mt-0.5 whitespace-pre-wrap">{m.text}</p>
+                                                </div>
+                                            ))}
+                                            {pages > 1 && (
+                                                <div className="flex items-center justify-center gap-3 pt-1">
+                                                    <button onClick={() => setMemoPage(Math.max(0, p - 1))} disabled={p === 0} className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-white/10 text-white/70 disabled:opacity-30">上一页</button>
+                                                    <span className="text-[10px] text-white/50 tabular-nums">{p + 1}/{pages}</span>
+                                                    <button onClick={() => setMemoPage(Math.min(pages - 1, p + 1))} disabled={p >= pages - 1} className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-white/10 text-white/70 disabled:opacity-30">下一页</button>
+                                                </div>
+                                            )}
+                                        </>);
+                                    })()
                             )}
                         </div>
                         {/* home indicator */}

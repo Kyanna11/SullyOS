@@ -390,6 +390,10 @@ export async function runWorldEpisode(deps: WorldEpisodeDeps): Promise<WorldEpis
                 if (chapter) {
                     updatedWorld.chapters = [...(updatedWorld.chapters || []), chapter];
                     updatedWorld.simSummarizedClock = newClock;
+                    // 归档后清空手机里属于这 20 天的私聊/群聊（已卷进编年史，手机只留归档后的新消息）
+                    if (updatedWorld.threads) {
+                        updatedWorld.threads = updatedWorld.threads.map(t => ({ ...t, messages: t.messages.filter(m => m.round > newClock) }));
+                    }
                     updatedWorld.updatedAt = Date.now();
                     await DB.saveWorld(updatedWorld);
                     dispatch('world-chapter-done', { worldId: world.id, index, chapterId: chapter.id });
