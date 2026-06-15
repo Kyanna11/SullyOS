@@ -36,6 +36,19 @@ export const NARRATIVE_STYLES: Record<Exclude<WorldNarrativeStyle, 'custom'>, { 
     },
 };
 
+/** 大段正文的叙述人称要求。 */
+export function narrationPersonGuide(world: WorldProfile, charName: string): string {
+    switch (world.narrationPerson) {
+        case 'second':
+            return `用**第二人称**写这段正文：以「你」称呼${charName}自己（像有人在旁白注视着 ta），全程「你…」。`;
+        case 'third':
+            return `用**第三人称**写这段正文：以「${charName}」或「ta」来叙述自己，像小说旁白。`;
+        case 'first':
+        default:
+            return `用**第一人称**写这段正文：以「我」叙述，是${charName}自己的内心视角。`;
+    }
+}
+
 export function narrativeStyleGuide(world: WorldProfile): string {
     if (world.narrativeStyle === 'custom' && world.narrativeStyleCustom?.trim()) {
         return world.narrativeStyleCustom.trim();
@@ -59,6 +72,36 @@ export function storyTimeLabel(storyClock: number): string {
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
+const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+/** 真实时钟 → 现实段：<5点算「晚」（深夜归夜），<12 早，<18 中，否则晚。 */
+export function realNowSeg(now: Date = new Date()): { dayKey: string; seg: number } {
+    const h = now.getHours();
+    const seg = h < 5 ? 2 : h < 12 ? 0 : h < 18 ? 1 : 2;
+    const dayKey = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+    return { dayKey, seg };
+}
+/** {dayKey,seg} → 标签「YYYY年M月D日 周X 早上/中午/晚上」。 */
+export function formatRealClock(rc: { dayKey: string; seg: number }): string {
+    const d = new Date(`${rc.dayKey}T00:00:00`);
+    if (isNaN(d.getTime())) return `${rc.dayKey} ${SEGMENT_LABELS[rc.seg] || ''}`;
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAYS[d.getDay()]} ${SEGMENT_LABELS[rc.seg] || ''}`;
+}
+/**
+ * real 模式下一次「观测」要演的现实段（早/中/晚），跟着真实时钟走：
+ *   - 没演过 → 演当前这一段；
+ *   - 落后于今天 → 补今天还没补的下一段（不超过现在）；
+ *   - 落后于过去某天 → 直接跳到今天最早一段（过去错过的补不回来）；
+ *   - 已追上现实 → null（这一段还没过去，没东西可演）。
+ */
+export function realObserveTarget(world: WorldProfile, now: Date = new Date()): { dayKey: string; seg: number } | null {
+    const cur = world.realClock;
+    const nw = realNowSeg(now);
+    if (!cur) return nw;
+    if (cur.dayKey < nw.dayKey) return { dayKey: nw.dayKey, seg: 0 }; // 过去的天丢掉，跳到今天最早一段
+    if (cur.dayKey > nw.dayKey) return null; // 数据异常（时钟回拨），不补
+    return cur.seg < nw.seg ? { dayKey: nw.dayKey, seg: cur.seg + 1 } : null; // 同一天：补下一段，或已追上
+}
+
 /**
  * 时间模式感知的时间标签：
  *   - real（默认）：沿用「第N天 早上/中午/晚上」。
@@ -72,7 +115,15 @@ export function worldTimeLabel(world: WorldProfile, storyClock: number = world.s
         const wd = WEEKDAYS[d.getDay()];
         return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${wd} ${SEGMENT_LABELS[storyClock % SEGMENTS_PER_DAY]}`;
     }
+    // real 模式：跟现实时钟同步，显示已演到的那一现实段
+    if (world.timeMode !== 'sim' && world.realClock) return formatRealClock(world.realClock);
     return storyTimeLabel(storyClock);
+}
+
+/** 该世界「当前那一段」是否算夜晚（real 看 realClock，sim 看 storyClock）。 */
+export function isNightWorld(world: WorldProfile): boolean {
+    if (world.timeMode !== 'sim' && world.realClock) return world.realClock.seg === 2;
+    return isNightClock(world.storyClock);
 }
 
 /** 找出某成员住在哪（不在任何小屋 = 独居）。 */
@@ -229,7 +280,7 @@ export function buildWorldCharTurn(args: {
     // ── 你的手机：私聊线程 + 世界群聊 ──
     const myDms = dmThreadsOf(world, char.id);
     const group = groupThreadOf(world);
-    const nameById = new Map(members.map(m => [m.id, m.name]));
+    const nameById = new Map([...members.map(m => [m.id, m.name] as const), ...world.npcs.map(n => [n.id, n.name] as const)]);
     const dmSection = myDms.length > 0
         ? myDms.map(t => {
             const otherName = t.memberIds.filter(id => id !== char.id).map(id => nameById.get(id)).filter(Boolean).join('、') || '?';
@@ -295,7 +346,7 @@ ${groupSection}
     { "time": "8:30", "place": "河堤", "event": "晨跑，碰到了遛狗的邻居", "shared": true },
     { "time": "10:00", "place": "…", "event": "…", "shared": true }
   ],
-  "narrative": "【大段正文，600~900字，分3~5个自然段（\\n\\n分段）】聚焦这半天里一件有意义的事 + 一次内心动静的拉扯（一个犹豫、一个决定、一次没说出口的话）。文风要求：${narrativeStyleGuide(world)}",
+  "narrative": "【大段正文，600~900字，分3~5个自然段（\\n\\n分段）】聚焦这一段里一件有意义的事 + 一次内心动静的拉扯（一个犹豫、一个决定、一次没说出口的话）。${narrationPersonGuide(world, char.name)} 文风要求：${narrativeStyleGuide(world)}",
   "memo": ["你随手记在备忘录里的话（0~3条：待办/碎碎念/不敢说出口的，完全私人）"],
   "impulse": { "text": "你此刻状态背后的冲动/待决策（想辞职/想告白/想搬走/想加把劲…没有就省略这个字段）", "options": ["选项A", "选项B"] },
   "secrets": [{ "text": "这半天你瞒着别人的事（对应 timeline 里 shared=false 的条目；没有就空数组）", "hideFrom": ["瞒着谁的名字；空数组=瞒所有人"] }],
@@ -303,16 +354,20 @@ ${groupSection}
   "dialogues": [{ "with": "在场成员的名字", "lines": ["你当面对ta说的话（ta会完整听到）"] }],
   "phone": {
     "posts": ["这一段发的社交媒体动态（尽量发 1 条，记录此刻的心情/见闻/吐槽/晒图文案；除非你确实没心情发，否则别空着）"],
-    "dms": [{ "to": "成员名", "lines": ["私聊消息，像真人在手机上打字——可以连发好几条短的、聊得来回多一点"] }],
+    "dms": [
+      { "to": "某个人的名字（同世界成员或镇上 NPC，不限于已聊过的人）", "lines": ["私聊消息，像真人在手机上打字——可连发好几条短的、聊得来回多一点；给 NPC 发的话 ta 会在之后回你"] },
+      { "to": "另一个人的名字", "lines": ["想同时私聊好几个不同的人，就在这个数组里给每个人各写一条（to 不同）；只聊一个就只留一条"] }
+    ],
     "group": ["发到世界群聊的话（0~4条）"]
   },
-  "relationships": [{ "with": "成员名", "delta": -4到4的整数, "reason": "为什么" }]
+  "relationships": [{ "with": "成员名", "delta": -4到4的整数, "reason": "为什么", "relabel": "（仅在这段关系发生重大转折时才给）你对这段关系新的定位/称呼，例如从「死对头」变成「不打不相识的损友」；平时省略此字段" }]
 }
 规则：
 - timeline 给 3~6 条，时间要符合${storyTime.includes('早') ? '清晨到上午' : storyTime.includes('中午') ? '午间到下午' : '傍晚到深夜'}；**shared=false 表示这段你想瞒着**（别人看不到，但可能成为伏笔）。
 - 信息可见性：动态=公开；timeline(shared=true)=别人能知道；私聊=仅对方；群聊=全员；narrative 和 memo=完全私人。瞒事就让对应 timeline 条目 shared=false 并写进 secrets。
 - ${world.mode === 'heavy' ? `这个世界里不存在 ${userName || '用户'}，所有字段都绝不出现 ta。` : world.mode === 'light' ? `${userName || '用户'} 是你心里最重要的人，但此刻不在场——可以在 narrative、memo 或动态里自然流露惦记。` : `${userName || '用户'} 只是世界里的普通一员，不必特意提及。`}
 - 手机里标【刚刚】的消息该回就回（phone.dms / phone.group），已读不回也行，但要符合你的性格；鼓励聊得丰富些。
+- **想私下联系谁，就必须写进 phone.dms（to=对方名字 + lines），这才是真的把消息发出去、对方才收得到。只在 narrative 正文里写"我给ta发了条私聊"是不算数的——对方收不到，那条私聊等于没发。** 可以同时私聊好几个不同的人。
 - dialogues 只在你的 timeline 和对方真的有共处时才用；不在一起就用手机，或者互相挂念/冷战都行——聚焦你自己。
 - **好感真的会左右你的言行**：严格按上面「你的关系」里每个人的好感档位与行为基调来相处——低好感/负好感时别自来熟、别无缘无故友善；中立的人就保持客气的距离感。
 - relationships(delta) 要克制、来之不易：日常小事 ±1~2，只有真正触动你的大事才到 ±3~4；好感是慢慢攒起来、也可能因一件事崩掉的，**绝不会一两轮就突飞猛进**。好感和你嘴上/理智上对这段关系的定位可以完全相反，按真实人性演（口嫌体正 / 面和心不和都行）。只在真的发生了影响关系的事时才给。`;
@@ -382,8 +437,18 @@ export function buildNpcTurn(args: {
     lastSummary?: string;
     /** sim 模式：上一卷沉淀的氛围基调（不含隐私，可给世界引擎定调） */
     chapterAtmosphere?: string;
+    /** 成员发给各 NPC、还没回的私信收件箱 */
+    inboxes?: { npcName: string; memberName: string; recent: string }[];
+    /** 最近的社交动态（让 NPC + 路人疯狂点赞/评论） */
+    recentPosts?: { ref: string; name: string; post: string }[];
 }): string {
-    const { world, members, storyTime, lastSummary, chapterAtmosphere } = args;
+    const { world, members, storyTime, lastSummary, chapterAtmosphere, inboxes, recentPosts } = args;
+    const inboxSection = (inboxes && inboxes.length > 0)
+        ? `\n## 📨 NPC 收到的私信（请让对应 NPC 回复）\n${inboxes.map(b => `▸ ${b.memberName} → ${b.npcName}：\n${b.recent}`).join('\n')}`
+        : '';
+    const postsSection = (recentPosts && recentPosts.length > 0)
+        ? `\n## 📱 社交动态（请热闹地点赞 + 评论——NPC 和路人都可以；ref 原样回填）\n${recentPosts.map(p => `[${p.ref}] ${p.name}：${p.post}`).join('\n')}`
+        : '';
     return `你是共同世界「${world.name}」的世界引擎，负责一次性扮演镇上所有 NPC。NPC 没有独立记忆，完全为世界观氛围服务。
 
 ## 世界观
@@ -397,14 +462,17 @@ ${members.map(m => m.name).join('、')}
 
 ## 之前发生的事
 ${lastSummary || '（这是这个世界的第一个半天）'}
-${chapterAtmosphere ? `\n## 这段日子的氛围基调\n${chapterAtmosphere}` : ''}
+${chapterAtmosphere ? `\n## 这段日子的氛围基调\n${chapterAtmosphere}` : ''}${inboxSection}${postsSection}
 剧情时间：${storyTime}。
-一次性输出这半天所有 NPC 的群像动静。严格输出一个 JSON 对象（建议用 \`\`\`json 包裹）：
+一次性输出这一段所有 NPC 的群像动静。严格输出一个 JSON 对象（建议用 \`\`\`json 包裹）：
 {
   "scene": "200~400字的 NPC 群像叙述：谁在做什么、市井气息、天气与街景、和主角们擦肩的小事件。生活感优先，不要推进重大剧情。",
   "hooks": ["1~3个可以被主角们接住的小事件钩子（例：面包店老板娘今天多烤了一炉栗子面包，见人就塞）"],
-  "groupLines": [{ "name": "NPC的名字", "line": "ta在世界群聊里冒泡的一句话（0~2条，市井闲聊/吆喝/通知，别太频繁）" }]
-}`;
+  "groupLines": [{ "name": "NPC的名字", "line": "ta在世界群聊里冒泡的一句话（0~2条，市井闲聊/吆喝/通知，别太频繁）" }],
+  "dms": [{ "from": "NPC的名字", "to": "给ta发私信的成员名", "lines": ["NPC 私信回复（针对上面收件箱里的消息；没有要回的就空数组）"] }],
+  "feedReactions": [{ "ref": "动态的ref原样", "likes": 点赞数(0~99的整数), "comments": [{ "from": "评论者名字（NPC 或随手编一个路人网名，如「街角咖啡师」「ConanFan_07」）", "text": "一句评论，热闹、口语、有梗" }] }]
+}
+让社交动态**热闹起来**：给每条动态都点上赞、配几条评论；评论者多用路人网名（不必是 NPC），像真的社交平台一样你一言我一语。`;
 }
 
 // ── 输出解析 ──────────────────────────────────────────────
@@ -435,13 +503,14 @@ const clampNum = (v: any, lo: number, hi: number, fallback: number): number => {
 };
 
 /** 解析单角色演绎输出 → WorldCharBeat（解析失败时整段原文兜底进 narrative，绝不丢内容）。 */
-export function parseCharBeat(raw: string, char: CharacterProfile, memberNames: string[]): WorldCharBeat {
+export function parseCharBeat(raw: string, char: CharacterProfile, memberNames: string[], npcNames: string[] = []): WorldCharBeat {
     const j = extractJson(raw);
     const fallbackNarrative = (raw || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/```(?:json)?|```/g, '').trim().slice(0, 1400);
     if (!j || typeof j !== 'object') {
         return { charId: char.id, charName: char.name, location: '住处', narrative: fallbackNarrative || '安静地度过了这半天。', mood: '平静' };
     }
     const nameSet = new Set(memberNames);
+    const dmNameSet = new Set([...memberNames, ...npcNames]); // 私聊对象可以是成员或 NPC
     const statusPanel: Record<string, number | string> = {};
     if (j.statusPanel && typeof j.statusPanel === 'object') {
         let count = 0;
@@ -453,7 +522,7 @@ export function parseCharBeat(raw: string, char: CharacterProfile, memberNames: 
     }
     const dms = Array.isArray(j.phone?.dms)
         ? j.phone.dms
-            .filter((d: any) => d && typeof d.to === 'string' && nameSet.has(d.to) && Array.isArray(d.lines))
+            .filter((d: any) => d && typeof d.to === 'string' && dmNameSet.has(d.to) && Array.isArray(d.lines))
             .map((d: any) => ({ to: d.to, lines: d.lines.map((l: any) => String(l).slice(0, 200)).filter(Boolean).slice(0, 8) }))
             .filter((d: any) => d.lines.length > 0)
             .slice(0, 4)
@@ -473,7 +542,7 @@ export function parseCharBeat(raw: string, char: CharacterProfile, memberNames: 
     const relationshipDeltas = Array.isArray(j.relationships)
         ? j.relationships
             .filter((r: any) => r && typeof r.with === 'string' && nameSet.has(r.with))
-            .map((r: any) => ({ withName: r.with, delta: clampNum(r.delta, -4, 4, 0), reason: r.reason ? String(r.reason).slice(0, 100) : undefined }))
+            .map((r: any) => ({ withName: r.with, delta: clampNum(r.delta, -4, 4, 0), reason: r.reason ? String(r.reason).slice(0, 100) : undefined, newLabel: r.relabel && String(r.relabel).trim() ? String(r.relabel).trim().slice(0, 24) : undefined }))
             .slice(0, 5)
         : [];
     const timeline = Array.isArray(j.timeline)
@@ -521,7 +590,7 @@ export function parseCharBeat(raw: string, char: CharacterProfile, memberNames: 
 }
 
 /** 解析 NPC 世界引擎输出。 */
-export function parseNpcScene(raw: string): { scene: string; hooks: string[]; groupLines: { name: string; line: string }[] } {
+export function parseNpcScene(raw: string): { scene: string; hooks: string[]; groupLines: { name: string; line: string }[]; dms: { from: string; to: string; lines: string[] }[]; feedReactions: { ref: string; likes: number; comments: { from: string; text: string }[] }[] } {
     const j = extractJson(raw);
     if (j && typeof j.scene === 'string') {
         return {
@@ -533,8 +602,28 @@ export function parseNpcScene(raw: string): { scene: string; hooks: string[]; gr
                     .map((g: any) => ({ name: g.name.trim(), line: g.line.trim().slice(0, 200) }))
                     .slice(0, 2)
                 : [],
+            dms: Array.isArray(j.dms)
+                ? j.dms
+                    .filter((d: any) => d && typeof d.from === 'string' && typeof d.to === 'string' && Array.isArray(d.lines))
+                    .map((d: any) => ({ from: d.from.trim(), to: d.to.trim(), lines: d.lines.map((l: any) => String(l).slice(0, 200)).filter(Boolean).slice(0, 6) }))
+                    .filter((d: any) => d.lines.length > 0)
+                    .slice(0, 8)
+                : [],
+            feedReactions: Array.isArray(j.feedReactions)
+                ? j.feedReactions
+                    .filter((r: any) => r && typeof r.ref === 'string')
+                    .map((r: any) => ({
+                        ref: r.ref.trim(),
+                        likes: clampNum(r.likes, 0, 999, 0),
+                        comments: Array.isArray(r.comments)
+                            ? r.comments.filter((c: any) => c && typeof c.from === 'string' && typeof c.text === 'string' && c.text.trim())
+                                .map((c: any) => ({ from: c.from.trim().slice(0, 20), text: c.text.trim().slice(0, 160) })).slice(0, 8)
+                            : [],
+                    }))
+                    .slice(0, 20)
+                : [],
         };
     }
     const fallback = (raw || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/```(?:json)?|```/g, '').trim().slice(0, 500);
-    return { scene: fallback, hooks: [], groupLines: [] };
+    return { scene: fallback, hooks: [], groupLines: [], dms: [], feedReactions: [] };
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { extractJson, parseCharBeat, parseNpcScene, storyTimeLabel, buildModeRule, buildWorldCharTurn, parseRolledNpcs, buildNpcRollPrompt, NARRATIVE_STYLES } from './prompts';
+import { extractJson, parseCharBeat, parseNpcScene, storyTimeLabel, buildModeRule, buildWorldCharTurn, parseRolledNpcs, buildNpcRollPrompt, NARRATIVE_STYLES, narrationPersonGuide, realNowSeg, realObserveTarget, worldTimeLabel } from './prompts';
 import { applyRelationshipDeltas, collectSeeds, buildSummary } from './engine';
-import { ensureThreads, applyBeatToThreads, applyNpcGroupLines, dmThreadsOf, groupThreadOf, formatThreadForPrompt, dmThreadId, GROUP_THREAD_ID } from './threads';
+import { ensureThreads, applyBeatToThreads, applyNpcGroupLines, applyNpcDms, npcInboxes, dmThreadsOf, groupThreadOf, formatThreadForPrompt, dmThreadId, GROUP_THREAD_ID } from './threads';
 import { WorldScheduler } from './scheduler';
 import type { CharacterProfile, WorldProfile } from '../../types';
 
@@ -176,6 +176,66 @@ describe('AI roll NPC', () => {
     });
 });
 
+describe('关系看法（label）可变 + 叙述人称', () => {
+    const char = mkChar('a', '小满');
+    const members = ['小满', '阿岚'];
+
+    it('parseCharBeat：重大转折时解析 relabel → newLabel', () => {
+        const raw = JSON.stringify({
+            location: '镇上', narrative: 'x', mood: 'y',
+            relationships: [{ with: '阿岚', delta: 3, reason: '一起扛过事', relabel: '不打不相识的损友' }],
+        });
+        const beat = parseCharBeat(raw, char, members);
+        expect(beat.relationshipDeltas?.[0]).toMatchObject({ withName: '阿岚', delta: 3, newLabel: '不打不相识的损友' });
+    });
+
+    it('parseCharBeat：没给 relabel 时 newLabel 为 undefined', () => {
+        const raw = JSON.stringify({ location: 'x', narrative: 'x', mood: 'y', relationships: [{ with: '阿岚', delta: 1 }] });
+        const beat = parseCharBeat(raw, char, members);
+        expect(beat.relationshipDeltas?.[0].newLabel).toBeUndefined();
+    });
+
+    it('narrationPersonGuide：随设置切换第一/二/三人称', () => {
+        expect(narrationPersonGuide({ narrationPerson: 'first' } as any, '小满')).toContain('第一人称');
+        expect(narrationPersonGuide({ narrationPerson: 'second' } as any, '小满')).toContain('第二人称');
+        expect(narrationPersonGuide({ narrationPerson: 'third' } as any, '小满')).toContain('第三人称');
+        expect(narrationPersonGuide({} as any, '小满')).toContain('第一人称'); // 默认
+    });
+});
+
+describe('真实时间（跟现实早/中/晚同步，错过当天可补、隔天不补）', () => {
+    const at = (s: string) => new Date(s);
+
+    it('realNowSeg：按小时分早/中/晚（深夜算晚）', () => {
+        expect(realNowSeg(at('2026-06-15T08:00:00')).seg).toBe(0); // 早
+        expect(realNowSeg(at('2026-06-15T13:00:00')).seg).toBe(1); // 中
+        expect(realNowSeg(at('2026-06-15T20:00:00')).seg).toBe(2); // 晚
+        expect(realNowSeg(at('2026-06-15T02:00:00')).seg).toBe(2); // 深夜→晚
+        expect(realNowSeg(at('2026-06-15T13:00:00')).dayKey).toBe('2026-06-15');
+    });
+
+    it('没演过 → 演当前这一段', () => {
+        expect(realObserveTarget(mkWorld({ timeMode: 'real' }), at('2026-06-15T13:00:00'))).toEqual({ dayKey: '2026-06-15', seg: 1 });
+    });
+
+    it('同一天落后 → 补下一段；已追上 → null', () => {
+        const w = mkWorld({ timeMode: 'real', realClock: { dayKey: '2026-06-15', seg: 0 } });
+        expect(realObserveTarget(w, at('2026-06-15T20:00:00'))).toEqual({ dayKey: '2026-06-15', seg: 1 }); // 只补一段
+        expect(realObserveTarget(mkWorld({ timeMode: 'real', realClock: { dayKey: '2026-06-15', seg: 2 } }), at('2026-06-15T20:00:00'))).toBeNull();
+    });
+
+    it('隔天没补的丢掉 → 直接跳到今天最早一段', () => {
+        const w = mkWorld({ timeMode: 'real', realClock: { dayKey: '2026-06-13', seg: 1 } });
+        expect(realObserveTarget(w, at('2026-06-15T20:00:00'))).toEqual({ dayKey: '2026-06-15', seg: 0 });
+    });
+
+    it('worldTimeLabel：real 模式显示已演到的现实段', () => {
+        const w = mkWorld({ timeMode: 'real', realClock: { dayKey: '2026-06-15', seg: 2 } });
+        expect(worldTimeLabel(w)).toContain('2026年6月15日');
+        expect(worldTimeLabel(w)).toContain('晚上');
+    });
+});
+
 describe('buildModeRule（三档 user 存在感）', () => {
     it('轻度：user 依旧是最重要的人', () => {
         expect(buildModeRule('light', '阿月')).toContain('最重要的人');
@@ -318,6 +378,47 @@ describe('世界消息线程（交替传递）', () => {
         const text = formatThreadForPrompt(dmThreadsOf(world, 'b')[0], 'b', 10, 2);
         expect(text).toContain('[第1天白天] 小满：老消息');
         expect(text).toContain('【刚刚】 小满：新消息');
+    });
+});
+
+describe('NPC 私聊（角色发、NPC 那一轮统一回复）', () => {
+    const members = [{ id: 'a', name: '小满' }];
+
+    it('parseCharBeat：可以给 NPC 发私信（to=NPC名也保留）', () => {
+        const raw = JSON.stringify({ location: 'x', narrative: 'x', mood: 'y', phone: { dms: [{ to: '老板娘', lines: ['今天还有栗子包吗'] }] } });
+        const beat = parseCharBeat(raw, mkChar('a', '小满'), ['小满'], ['老板娘']);
+        expect(beat.phone?.dms?.[0]).toEqual({ to: '老板娘', lines: ['今天还有栗子包吗'] });
+    });
+
+    it('applyBeatToThreads：角色→NPC 私信落进 char↔npc 线程；npcInboxes 能捞到待回', () => {
+        const world = mkWorld({ npcs: [{ id: 'n1', name: '老板娘', persona: '面包店' }] });
+        applyBeatToThreads(world, { charId: 'a', charName: '小满', location: 'x', narrative: 'y', mood: 'z', phone: { dms: [{ to: '老板娘', lines: ['还有栗子包吗'] }] } }, members, 1, '第1天早上');
+        const tid = dmThreadId('a', 'n1');
+        expect(dmThreadsOf(world, 'a').some(t => t.id === tid)).toBe(true);
+        const inbox = npcInboxes(world);
+        expect(inbox).toHaveLength(1);
+        expect(inbox[0]).toMatchObject({ npcName: '老板娘', memberName: '小满' });
+    });
+
+    it('applyNpcDms：NPC 回复后该线程不再算待回', () => {
+        const world = mkWorld({ npcs: [{ id: 'n1', name: '老板娘', persona: '面包店' }] });
+        applyBeatToThreads(world, { charId: 'a', charName: '小满', location: 'x', narrative: 'y', mood: 'z', phone: { dms: [{ to: '老板娘', lines: ['还有栗子包吗'] }] } }, members, 1, '第1天早上');
+        applyNpcDms(world, [{ from: '老板娘', to: '小满', lines: ['刚出炉，给你留俩'] }], members, 1, '第1天早上');
+        expect(npcInboxes(world)).toHaveLength(0);
+        const thread = dmThreadsOf(world, 'a').find(t => t.id === dmThreadId('a', 'n1'))!;
+        expect(thread.messages.map(m => `${m.fromName}:${m.text}`)).toEqual(['小满:还有栗子包吗', '老板娘:刚出炉，给你留俩']);
+    });
+
+    it('parseNpcScene：解析 NPC 私信回复', () => {
+        const out = parseNpcScene('```json\n{"scene":"x","hooks":[],"groupLines":[],"dms":[{"from":"老板娘","to":"小满","lines":["给你留俩"]}]}\n```');
+        expect(out.dms).toEqual([{ from: '老板娘', to: '小满', lines: ['给你留俩'] }]);
+    });
+
+    it('parseNpcScene：解析动态点赞/评论（NPC+路人），likes 钳整数', () => {
+        const out = parseNpcScene('```json\n{"scene":"x","feedReactions":[{"ref":"3_a_0","likes":"12","comments":[{"from":"街角咖啡师","text":"好可爱！"},{"from":"路人乙"}]}]}\n```');
+        expect(out.feedReactions).toHaveLength(1);
+        expect(out.feedReactions[0]).toMatchObject({ ref: '3_a_0', likes: 12 });
+        expect(out.feedReactions[0].comments).toEqual([{ from: '街角咖啡师', text: '好可爱！' }]); // 无 text 的被过滤
     });
 });
 

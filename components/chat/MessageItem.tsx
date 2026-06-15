@@ -1570,26 +1570,30 @@ const MessageItem = React.memo(({
         const card = (
             <div className="w-64">
                 <div
-                    className="rounded-xl overflow-hidden border border-emerald-300/40 shadow-[0_4px_16px_rgba(20,80,60,0.22)]"
-                    style={{ background: 'linear-gradient(155deg,#1d3b30 0%,#142921 100%)' }}
+                    className="relative rounded-2xl overflow-hidden border border-violet-200/70 shadow-[0_6px_20px_rgba(150,130,200,0.22)]"
+                    style={{ background: 'linear-gradient(160deg,#fbf7ff 0%,#f1ebfa 55%,#eae3f6 100%)' }}
                 >
+                    {/* 顶部淡紫光晕 + 月亮 + 星点（浅色系，和彼方的深色拉开差异） */}
+                    <div className="absolute -top-6 -right-4 w-24 h-24 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle,rgba(214,196,244,.55),transparent 70%)' }} />
+                    <div className="absolute top-2.5 right-3.5 w-5 h-5 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle at 38% 35%,#ffffff,#d9cdf0 72%)', boxShadow: '0 0 10px 2px rgba(200,180,245,.5)' }} />
+                    <div className="absolute inset-0 pointer-events-none opacity-60" style={{ backgroundImage: 'radial-gradient(1px 1px at 20% 22%,#c9b8ec,transparent),radial-gradient(1px 1px at 60% 16%,#e7c9f0,transparent),radial-gradient(1px 1px at 40% 34%,#bcd0f0,transparent)' }} />
                     {/* 头部：家园 · 世界名 · 剧情时间 */}
-                    <div className="px-3 pt-2.5 pb-2 flex items-center gap-2 border-b border-white/10">
-                        <span className="text-base leading-none text-emerald-200/80" style={{ filter: 'drop-shadow(0 0 5px rgba(150,255,200,.5))' }}>⌂</span>
+                    <div className="relative px-3 pt-2.5 pb-2 flex items-center gap-2 border-b border-violet-200/50">
+                        <span className="text-base leading-none text-violet-400" style={{ filter: 'drop-shadow(0 1px 3px rgba(180,150,230,.5))' }}>⌂</span>
                         <div className="flex-1 min-w-0">
-                            <div className="text-[9px] tracking-[0.25em] text-emerald-300/80 font-bold uppercase">家园 · {md.storyTime || '生活记录'}</div>
-                            <div className="text-[12px] text-emerald-50 font-semibold truncate">{md.worldName || '共同世界'}</div>
+                            <div className="text-[9px] tracking-[0.25em] text-violet-400/90 font-bold uppercase">家园 · {md.storyTime || '生活记录'}</div>
+                            <div className="text-[12px] text-[#5b4b7a] font-semibold truncate font-serif">{md.worldName || '共同世界'}</div>
                         </div>
-                        <span className="text-[9px] text-emerald-300/60">{timeStr}</span>
+                        <span className="text-[9px] text-violet-400/60">{timeStr}</span>
                     </div>
                     {/* 行为描述 */}
-                    <div className="px-3 py-2.5">
-                        <p className="text-[11px] text-emerald-200/80 mb-1">
-                            <span className="font-bold text-amber-200">{charName || 'Ta'}</span>
+                    <div className="relative px-3 py-2.5">
+                        <p className="text-[11px] text-[#6a5790] mb-1">
+                            <span className="font-bold text-rose-400">{charName || 'Ta'}</span>
                             {md.location ? ` 在${md.location}` : ''}{md.mood ? ` · ${md.mood}` : ''}
                         </p>
                         {narrative && (
-                            <p className="text-[12px] leading-[1.55] text-emerald-50/90 whitespace-pre-wrap max-h-44 overflow-y-auto no-scrollbar">
+                            <p className="text-[12px] leading-[1.6] text-[#4a3f63] whitespace-pre-wrap max-h-44 overflow-y-auto no-scrollbar">
                                 {narrative}
                             </p>
                         )}
@@ -1597,7 +1601,7 @@ const MessageItem = React.memo(({
                         {Object.keys(panel).length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-1">
                                 {Object.entries(panel).map(([k, v]) => (
-                                    <span key={k} className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-emerald-100/90 border border-white/10">
+                                    <span key={k} className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-100/80 text-violet-600 border border-violet-200/70">
                                         {k} {String(v)}
                                     </span>
                                 ))}
@@ -1607,7 +1611,7 @@ const MessageItem = React.memo(({
                         {posts.length > 0 && (
                             <div className="mt-2 space-y-1">
                                 {posts.map((p, i) => (
-                                    <div key={i} className="text-[11px] leading-snug text-emerald-200/85 pl-2 border-l-2 border-amber-300/50">
+                                    <div key={i} className="text-[11px] leading-snug text-violet-700/85 pl-2 border-l-2 border-rose-300/70">
                                         {p}
                                     </div>
                                 ))}
@@ -1615,9 +1619,9 @@ const MessageItem = React.memo(({
                         )}
                     </div>
                     {/* 页脚 */}
-                    <div className="px-3 py-1.5 border-t border-white/10 flex items-center justify-between">
-                        <span className="text-[9px] text-emerald-300/60 italic">Ta 在那个世界的生活</span>
-                        <span className="text-[9px] text-amber-200/70 font-bold tracking-wide">＋记忆</span>
+                    <div className="relative px-3 py-1.5 border-t border-violet-200/50 flex items-center justify-between">
+                        <span className="text-[9px] text-violet-400/70 italic">Ta 在那个世界的生活</span>
+                        <span className="text-[9px] text-rose-400/80 font-bold tracking-wide">＋记忆</span>
                     </div>
                 </div>
             </div>

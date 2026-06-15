@@ -867,6 +867,9 @@ export interface WorldProfile {
     timeMode?: WorldTimeMode;
     /** sim 模式的起始日期（不设时按创建当天） */
     simStartDate?: WorldSimDate;
+    /** real 模式：世界已演到的「现实段」（早/中/晚跟着真实时钟走）。dayKey=YYYY-MM-DD，seg=0早/1中/2晚。
+     *  只能补当天错过的段，过了今天就补不了；未演过时为空。 */
+    realClock?: { dayKey: string; seg: number };
     /** sim 模式：已被卷入章节总结的剧情时钟数（round ≤ 此值的原文已归档，不再喂原文） */
     simSummarizedClock?: number;
     /** sim 模式：每 20 天结一卷的章节总结（按 index 升序累积；最新一卷参与下一卷的上文喂养） */
@@ -875,6 +878,8 @@ export interface WorldProfile {
     narrativeStyle?: WorldNarrativeStyle;
     /** narrativeStyle='custom' 时的自定义文风提示词 */
     narrativeStyleCustom?: string;
+    /** 大段正文的叙述人称：first=第一人称(我) / second=第二人称(你) / third=第三人称(名字/ta)。默认 first */
+    narrationPerson?: 'first' | 'second' | 'third';
     /** 参与的角色（CharacterProfile.id） */
     memberIds: string[];
     npcs: WorldNPC[];
@@ -886,6 +891,8 @@ export interface WorldProfile {
     seeds?: WorldSeed[];
     /** 待注入的用户决策（消费后移除） */
     directives?: WorldDirective[];
+    /** 社交动态的互动：key = `${round}_${charId}_${postIdx}`，值含点赞数 + 评论（NPC/路人）。 */
+    feedReactions?: Record<string, { likes: number; comments: { from: string; text: string }[] }>;
     /** 每天离线 tick 的时段（早/午/晚），空数组 = 仅手动观测推进 */
     offlineTickSlots?: ('morning' | 'noon' | 'evening')[];
     /** 剧情时钟：累计推进的半天数（0 = 第1天白天） */
@@ -930,8 +937,9 @@ export interface WorldCharBeat {
     };
     /** 共处时当面对在场成员说的话（不是手机）——对话对象的演绎轮里会完整听到并被要求回应 */
     dialogues?: { with: string; lines: string[] }[];
-    /** 本轮产出的关系变化（按名字回填到 world.relationships） */
-    relationshipDeltas?: { withName: string; delta: number; reason?: string }[];
+    /** 本轮产出的关系变化（按名字回填到 world.relationships）。newLabel：仅在关系重大转折时，
+     *  角色对这段关系的新看法/称呼（覆盖 label，平时不给）。 */
+    relationshipDeltas?: { withName: string; delta: number; reason?: string; newLabel?: string }[];
 }
 
 /** 一轮演绎（"观测"或离线 tick 触发，推进半天剧情时间；IndexedDB world_episodes 表）。 */
@@ -948,6 +956,8 @@ export interface WorldEpisode {
     /** NPC 留下的、可被下一轮角色接住的事件钩子 */
     npcHooks?: string[];
     beats: WorldCharBeat[];
+    /** 本轮没演出来（LLM 调用/解析失败）的成员 charId——UI 提示用户可重 roll */
+    failedCharIds?: string[];
     /** 机械拼接的本轮梗概，喂给下一轮做连续性 */
     summary: string;
     createdAt: number;
@@ -2366,6 +2376,8 @@ export interface FullBackupData {
     worlds?: WorldProfile[];                   // 家园·世界定义
     worldEpisodes?: WorldEpisode[];            // 家园·演绎历史
     vrPostOffice?: Record<string, string>;     // 邮局本机配置：身份 deviceId / 后端地址（存 localStorage）
+    worldHomeLocal?: Record<string, string>;   // 家园本机配置：全局 API + 文风收藏（存 localStorage）
+    luckinLocal?: Record<string, string>;      // 瑞幸：token + 启用状态（存 localStorage）
     songs?: SongSheet[]; // Songwriting app data
     
     // Bank Data
