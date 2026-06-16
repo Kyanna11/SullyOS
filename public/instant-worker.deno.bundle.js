@@ -3134,6 +3134,22 @@ function withSseAntiBufferingHeaders(resp) {
     headers
   });
 }
+async function decodeGzipRequestBody(request) {
+  if (request.headers.get("x-amsg-request-encoding") !== "gzip" || !request.body) {
+    return request;
+  }
+  const decompressed = await new Response(
+    request.body.pipeThrough(new DecompressionStream("gzip"))
+  ).arrayBuffer();
+  const headers = new Headers(request.headers);
+  headers.delete("x-amsg-request-encoding");
+  headers.delete("content-length");
+  return new Request(request.url, {
+    method: request.method,
+    headers,
+    body: decompressed
+  });
+}
 var src_default = {
   fetch: async (request, env, ctx) => {
     const url = new URL(request.url);
@@ -3143,16 +3159,17 @@ var src_default = {
     if (url.pathname === "/capabilities" || url.pathname === "/health") {
       return handleCapabilitiesRequest(request, env);
     }
+    const decodedRequest = await decodeGzipRequestBody(request);
     let body = null;
     try {
-      body = await request.clone().json();
+      body = await decodedRequest.clone().json();
     } catch {
       body = null;
     }
     const requestedEnv = withRequestOversizeTransport({ ...env }, body);
     const workerEnv = await prepareBlobStoreEnv(requestedEnv);
     scheduleD1BlobCleanup(workerEnv, ctx);
-    const resp = await cfWorker.fetch(request, workerEnv, ctx);
+    const resp = await cfWorker.fetch(decodedRequest, workerEnv, ctx);
     return withSseAntiBufferingHeaders(resp);
   },
   async scheduled(_event, env) {

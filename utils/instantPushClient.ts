@@ -1118,6 +1118,10 @@ export async function sendInstantPushAndAwaitReply(
             status: meta?.status,
           });
         },
+        // 请求体 gzip 上行 (amsg-client 2.7+ 支持; 旧版忽略, 明文发, 无副作用)。
+        // 大 body 超阈值时压缩再发, worker 入口解压 —— iOS 上行 ~322KB 压到 ~50KB,
+        // 绕开「大 body 上传撑过 42s 被掐」。上下文全量不变。线上契约见 worker decodeGzipRequestBody。
+        compressRequest: true,
       } as Record<string, unknown>),
     });
 

@@ -565,6 +565,34 @@ function withSseAntiBufferingHeaders(resp: Response): Response {
   });
 }
 
+/**
+ * 大请求体 gzip 上行解码。amsg-client 2.7+ 在 body 超阈值时会 gzip 压缩、带自定义头
+ * `X-Amsg-Request-Encoding: gzip` 发原始压缩字节 —— iOS 上行把 ~322KB 压到 ~50KB,
+ * 绕开「大 body 上传撑过 ~42s 被中间层掐」那条链路。
+ *
+ * 这里在 worker 入口把它解压回普通 JSON Request, 后续 `.json()` / amsg-instant 读 body
+ * 全程无感。**故意用自定义头而非标准 `Content-Encoding`**: 标准头会被 CF / 代理自动解压,
+ * 双重解压会炸; 自定义头只有我们自己认, 链路中间不碰。
+ *
+ * 没这个头 (旧客户端 / 客户端 CompressionStream 不可用时回退明文) 原样返回, 向后兼容。
+ */
+async function decodeGzipRequestBody(request: Request): Promise<Request> {
+  if (request.headers.get('x-amsg-request-encoding') !== 'gzip' || !request.body) {
+    return request;
+  }
+  const decompressed = await new Response(
+    request.body.pipeThrough(new DecompressionStream('gzip')),
+  ).arrayBuffer();
+  const headers = new Headers(request.headers);
+  headers.delete('x-amsg-request-encoding');
+  headers.delete('content-length'); // 解压后长度变了, 删掉让运行时自算
+  return new Request(request.url, {
+    method: request.method,
+    headers,
+    body: decompressed,
+  });
+}
+
 export default {
   fetch: async (request: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) => {
     const url = new URL(request.url);
@@ -575,9 +603,12 @@ export default {
       return handleCapabilitiesRequest(request, env);
     }
 
+    // 大请求体走 gzip 上行时, 入口先解压成普通 Request, 后面 .json() / cfWorker 全程无感。
+    const decodedRequest = await decodeGzipRequestBody(request);
+
     let body: any = null;
     try {
-      body = await request.clone().json();
+      body = await decodedRequest.clone().json();
     } catch {
       body = null; // 非 JSON / 解析失败: 不影响主路径
     }
@@ -586,7 +617,7 @@ export default {
     scheduleD1BlobCleanup(workerEnv, ctx);
 
     // 主回复由 amsg-instant 内部的 onBeforeLoop / waitUntil 驱动。
-    const resp = await (cfWorker as any).fetch(request, workerEnv, ctx);
+    const resp = await (cfWorker as any).fetch(decodedRequest, workerEnv, ctx);
     return withSseAntiBufferingHeaders(resp);
   },
   async scheduled(_event: unknown, env: Env) {
