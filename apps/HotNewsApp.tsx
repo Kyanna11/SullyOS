@@ -79,7 +79,7 @@ const HotNewsApp: React.FC = () => {
         <div className="h-full w-full bg-[#f4efe4] flex flex-col font-serif text-stone-900">
             {/* 顶栏 */}
             <div className="bg-[#f4efe4] border-b-2 border-stone-800 shrink-0 sticky top-0 z-10" style={{ paddingTop: 'var(--safe-top)' }}>
-                <div className="h-20 flex items-end pb-3 px-4">
+                <div className="flex items-center px-4 py-3">
                     <div className="flex items-center gap-2 w-full">
                         <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
                             <ArrowLeft size={22} weight="bold" className="text-stone-700" />

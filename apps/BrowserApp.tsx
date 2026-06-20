@@ -449,7 +449,7 @@ Generate realistic results linking to hypothetical URLs.`;
         <div className="h-full w-full bg-white flex flex-col font-sans relative">
             {/* Top Bar (Address) */}
             <div className="bg-slate-50 border-b border-slate-200 shrink-0 z-20 sticky top-0 shadow-sm" style={{ paddingTop: 'var(--safe-top)' }}>
-              <div className="h-28 flex flex-col justify-end px-4 pb-3">
+              <div className="flex flex-col px-4 pt-2 pb-3">
                 {/* Controls Row */}
                 <div className="flex justify-between items-center mb-2">
                     <button onClick={closeApp} className="text-slate-400 hover:text-slate-600 text-xs font-bold px-2">Close</button>

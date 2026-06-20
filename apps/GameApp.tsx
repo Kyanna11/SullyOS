@@ -1179,7 +1179,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
 
                 {/* Header */}
                 <div className="shrink-0 z-10" style={{ paddingTop: 'var(--safe-top)' }}>
-                    <div className="h-20 flex items-end justify-between px-6 pb-4">
+                    <div className="flex items-center justify-between px-6 py-3">
                         <button onClick={closeApp} className="p-2 -ml-2 hover:bg-white/10 rounded-full text-white/70 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                         </button>
@@ -1311,7 +1311,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
 
                 {/* Header */}
                 <div className="shrink-0 z-10" style={{ paddingTop: 'var(--safe-top)' }}>
-                    <div className="h-20 flex items-end px-5 pb-4">
+                    <div className="flex items-center px-5 py-3">
                         <button onClick={() => setView('lobby')} className="p-2 -ml-2 rounded-full text-white/70 hover:bg-white/10 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg></button>
                         <span className="font-black tracking-[0.15em] text-base ml-1 mb-1 text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-500">创建新世界</span>
                     </div>
@@ -1488,7 +1488,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
             
             {/* Header */}
             <div className={`border-b ${theme.border} shrink-0 bg-opacity-90 backdrop-blur z-20 relative`} style={{ paddingTop: 'var(--safe-top)' }}>
-                <div className="h-20 flex items-end justify-between px-4 pb-3">
+                <div className="flex items-center justify-between px-4 py-3">
                     <div className="flex items-center gap-2">
                         <button onClick={handleLeave} className={`p-2 -ml-2 rounded hover:bg-white/10 active:scale-95 transition-transform`}>
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
