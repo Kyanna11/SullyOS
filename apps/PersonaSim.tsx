@@ -213,39 +213,43 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
 
         // emotion buff — only if the schedule feature is on for this character
         const scheduleOn = isScheduleFeatureOn(targetChar);
-        if (scheduleOn && script.buff?.label) {
-            const newBuff: CharacterBuff = {
-                id: `buff_${Date.now()}`,
-                name: script.buff.name || `sim_${Date.now()}`,
-                label: script.buff.label,
-                intensity: (script.buff.intensity && [1, 2, 3].includes(script.buff.intensity) ? script.buff.intensity : 2) as 1 | 2 | 3,
-                emoji: script.buff.emoji,
-                color: script.buff.color || ACCENT,
-                description: script.buff.description,
+        const newBuff: CharacterBuff | null = (scheduleOn && script.buff?.label) ? {
+            id: `buff_${Date.now()}`,
+            name: script.buff.name || `sim_${Date.now()}`,
+            label: script.buff.label,
+            intensity: (script.buff.intensity && [1, 2, 3].includes(script.buff.intensity) ? script.buff.intensity : 2) as 1 | 2 | 3,
+            emoji: script.buff.emoji,
+            color: script.buff.color || ACCENT,
+            description: script.buff.description,
+        } : null;
+        if (newBuff) log.buff = { label: newBuff.label, emoji: newBuff.emoji, color: newBuff.color };
+
+        // 关键：基于「最新」角色状态合并，绝不用可能过期的 targetChar 快照整体覆盖 phoneState
+        //（否则在异步间隙里别处的写入会把刚存的 simLogs / 其它 phoneState 字段抹掉）。
+        let dispatchBuffs: CharacterBuff[] | null = null;
+        updateCharacter(targetChar.id, (cur) => {
+            const phoneState = {
+                ...cur.phoneState,
+                records: cur.phoneState?.records || [],
+                simLogs: [log, ...(cur.phoneState?.simLogs || [])],
             };
-            log.buff = { label: newBuff.label, emoji: newBuff.emoji, color: newBuff.color };
-            const existing = (targetChar.activeBuffs || []).filter(b => b.id !== newBuff.id);
-            const nextBuffs = [newBuff, ...existing].slice(0, 4);
-            updateCharacter(targetChar.id, {
-                activeBuffs: nextBuffs,
-                buffInjection: script.buff.description ? `（${newBuff.emoji || ''}${newBuff.label}）${script.buff.description}` : '',
-                phoneState: {
-                    records: targetChar.phoneState?.records || [],
-                    customApps: targetChar.phoneState?.customApps,
-                    simLogs: [log, ...(targetChar.phoneState?.simLogs || [])],
-                },
-            });
-            window.dispatchEvent(new CustomEvent('emotion-updated', {
-                detail: { charId: targetChar.id, buffs: nextBuffs, buffInjection: '' },
-            }));
-        } else {
-            updateCharacter(targetChar.id, {
-                phoneState: {
-                    records: targetChar.phoneState?.records || [],
-                    customApps: targetChar.phoneState?.customApps,
-                    simLogs: [log, ...(targetChar.phoneState?.simLogs || [])],
-                },
-            });
+            if (newBuff && script.buff) {
+                const existing = (cur.activeBuffs || []).filter(b => b.id !== newBuff.id);
+                const nextBuffs = [newBuff, ...existing].slice(0, 4);
+                dispatchBuffs = nextBuffs;
+                return {
+                    activeBuffs: nextBuffs,
+                    buffInjection: script.buff.description ? `（${newBuff.emoji || ''}${newBuff.label}）${script.buff.description}` : '',
+                    phoneState,
+                };
+            }
+            return { phoneState };
+        });
+        if (newBuff) {
+            // buffs 拿不到就退化成「纯刷新」信号——buffSyncHandler 会从 DB 兜底重读
+            window.dispatchEvent(new CustomEvent('emotion-updated',
+                dispatchBuffs ? { detail: { charId: targetChar.id, buffs: dispatchBuffs, buffInjection: '' } }
+                              : { detail: { charId: targetChar.id } }));
         }
     }, [script, mode, theme, beats.length, targetChar, updateCharacter]);
 

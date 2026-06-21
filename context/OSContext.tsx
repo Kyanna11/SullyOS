@@ -219,7 +219,7 @@ interface OSContextType {
   characters: CharacterProfile[];
   activeCharacterId: string;
   addCharacter: () => void;
-  updateCharacter: (id: string, updates: Partial<CharacterProfile>) => void;
+  updateCharacter: (id: string, updates: Partial<CharacterProfile> | ((prev: CharacterProfile) => Partial<CharacterProfile>)) => void;
   deleteCharacter: (id: string) => void;
   setActiveCharacterId: (id: string) => void;
   
@@ -2160,7 +2160,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setActiveCharacterId(newChar.id);
     await DB.saveCharacter(newChar);
   };
-  const updateCharacter = async (id: string, updates: Partial<CharacterProfile>) => { setCharacters(prev => { const updated = prev.map(c => c.id === id ? normalizeCharacterImpression({ ...c, ...updates }) : c); const target = updated.find(c => c.id === id); if (target) DB.saveCharacter(target); return updated; }); };
+  const updateCharacter = async (id: string, updates: Partial<CharacterProfile> | ((prev: CharacterProfile) => Partial<CharacterProfile>)) => { setCharacters(prev => { const updated = prev.map(c => c.id === id ? normalizeCharacterImpression({ ...c, ...(typeof updates === 'function' ? updates(c) : updates) }) : c); const target = updated.find(c => c.id === id); if (target) DB.saveCharacter(target); return updated; }); };
   const deleteCharacter = async (id: string) => { setCharacters(prev => { const remaining = prev.filter(c => c.id !== id); if (remaining.length > 0 && activeCharacterId === id) { setActiveCharacterId(remaining[0].id); } return remaining; }); await DB.deleteCharacter(id); };
   
   // Group Methods

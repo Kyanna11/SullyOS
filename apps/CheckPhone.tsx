@@ -417,10 +417,11 @@ ${layoutHint[layout || 'generic']}`;
                 }
             }
 
-            const existingRecords = targetChar.phoneState?.records || [];
-            updateCharacter(targetChar.id, {
-                phoneState: { ...targetChar.phoneState, records: [...existingRecords, ...newRecordsToAdd] }
-            });
+            // 基于最新状态合并：生成是异步的，期间若有演出落库 simLogs，
+            // 用过期的 targetChar 快照覆盖会把 simLogs 等字段抹掉。
+            updateCharacter(targetChar.id, (cur) => ({
+                phoneState: { ...cur.phoneState, records: [...(cur.phoneState?.records || []), ...newRecordsToAdd] }
+            }));
 
             addToast(`已刷新 ${newRecordsToAdd.length} 条数据`, 'success');
 
