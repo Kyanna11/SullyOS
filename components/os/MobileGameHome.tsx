@@ -159,7 +159,7 @@ const MobileGameHome: React.FC = () => {
     );
 
     // 真实数值：等级/经验来自聊天消息数（每条 10 exp，升级所需随等级递增的三角曲线）；
-    // 钻石 = 聊天热度（消息数×5）；星星 = 认识天数（从最早一条消息算起）。
+    // 钻石 = 聊天消息数本身；星星 = 认识天数（从最早一条消息算起）。
     const stats = useMemo(() => {
         const msgCount = stat.msgCount;
         const totalExp = msgCount * 10;
@@ -168,7 +168,7 @@ const MobileGameHome: React.FC = () => {
         const need = (base * level * (level - 1)) / 2;
         const exp = Math.max(0, Math.round(totalExp - need));
         const expMax = base * level;
-        const gems = msgCount * 5;
+        const gems = msgCount; // 钻石 = 聊天消息数本身（不放大）
         const daysKnown = stat.firstTs ? Math.max(1, Math.floor((Date.now() - stat.firstTs) / 86400000) + 1) : 1;
         return { level, exp, expMax, gems, stars: daysKnown };
     }, [stat]);
