@@ -1557,33 +1557,36 @@ const MessageItem = React.memo(({
     // --- Webpage Share Card (用户分享的网页) ---
     if (m.type === 'webpage_card' && m.metadata?.webpage) {
         const wp = m.metadata.webpage;
+        let host = (wp.siteName || '').trim();
+        try { host = new URL(wp.finalUrl || wp.url).hostname.replace(/^www\./, ''); } catch { /* 用 siteName 兜底 */ }
         const openPage = () => {
             const u = wp.finalUrl || wp.url;
             if (u) window.open(u, '_blank', 'noopener,noreferrer');
         };
+        const excerpt = (wp.excerpt || '').trim();
         return commonLayout(
             <div
                 onClick={openPage}
-                className="w-64 bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer active:opacity-90 transition-opacity">
-                {/* Header: site name */}
-                <div className="px-3 py-2 bg-gradient-to-r from-sky-400 to-indigo-400 flex items-center gap-1.5">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-white/90 shrink-0">
-                        <path fillRule="evenodd" d="M12.232 4.232a2.5 2.5 0 0 1 3.536 3.536l-1.225 1.224a.75.75 0 0 0 1.061 1.06l1.224-1.224a4 4 0 0 0-5.656-5.656l-3 3a4 4 0 0 0 .225 5.865.75.75 0 0 0 .977-1.138 2.5 2.5 0 0 1-.142-3.667l3-3Z" clipRule="evenodd" />
-                        <path fillRule="evenodd" d="M11.603 7.963a.75.75 0 0 0-.977 1.138 2.5 2.5 0 0 1 .142 3.667l-3 3a2.5 2.5 0 0 1-3.536-3.536l1.225-1.224a.75.75 0 0 0-1.061-1.06l-1.224 1.224a4 4 0 1 0 5.656 5.656l3-3a4 4 0 0 0-.225-5.865Z" clipRule="evenodd" />
-                    </svg>
-                    <span className="text-white/90 text-[11px] font-medium truncate">{wp.siteName || '网页链接'}</span>
-                </div>
-                <div className="p-3">
-                    {/* Title */}
-                    <div className="font-bold text-sm text-slate-800 line-clamp-2 leading-snug mb-1.5">{wp.title || '网页'}</div>
-                    {/* Excerpt */}
-                    {wp.excerpt && <p className="text-xs text-slate-500 line-clamp-3 leading-relaxed mb-2">{wp.excerpt}</p>}
-                    {/* Footer: url */}
-                    <div className="mt-1 pt-1.5 border-t border-slate-50 flex items-center gap-1 text-[9px] text-slate-300">
-                        <span className="text-indigo-400 font-bold">网页</span>
-                        <span>·</span>
-                        <span className="truncate">{wp.finalUrl || wp.url}</span>
+                className="w-64 bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-[0_2px_10px_rgba(0,0,0,0.05)] cursor-pointer active:opacity-90 transition-opacity">
+                <div className="p-3.5">
+                    {/* 域名行 */}
+                    <div className="flex items-center gap-1.5 mb-2">
+                        <span className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5 text-slate-400">
+                                <path fillRule="evenodd" d="M12.232 4.232a2.5 2.5 0 0 1 3.536 3.536l-1.225 1.224a.75.75 0 0 0 1.061 1.06l1.224-1.224a4 4 0 0 0-5.656-5.656l-3 3a4 4 0 0 0 .225 5.865.75.75 0 0 0 .977-1.138 2.5 2.5 0 0 1-.142-3.667l3-3Z" clipRule="evenodd" />
+                                <path fillRule="evenodd" d="M11.603 7.963a.75.75 0 0 0-.977 1.138 2.5 2.5 0 0 1 .142 3.667l-3 3a2.5 2.5 0 0 1-3.536-3.536l1.225-1.224a.75.75 0 0 0-1.061-1.06l-1.224 1.224a4 4 0 1 0 5.656 5.656l3-3a4 4 0 0 0-.225-5.865Z" clipRule="evenodd" />
+                            </svg>
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-medium truncate">{host || '网页'}</span>
                     </div>
+                    {/* 标题 */}
+                    <div className="font-semibold text-[15px] text-slate-800 line-clamp-2 leading-snug">{wp.title || host || '网页'}</div>
+                    {/* 摘要 / 抓空占位 */}
+                    {excerpt ? (
+                        <p className="text-xs text-slate-500 line-clamp-3 leading-relaxed mt-1.5">{excerpt}</p>
+                    ) : (
+                        <p className="text-[11px] text-slate-300 mt-1.5">未能提取到正文预览，点开看原网页</p>
+                    )}
                 </div>
             </div>
         );

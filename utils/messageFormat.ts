@@ -155,9 +155,13 @@ export function normalizeMessageContent(
         const bodyRaw = (typeof meta.content === 'string' && meta.content.trim())
             ? meta.content.trim()
             : (typeof meta.excerpt === 'string' ? meta.excerpt.trim() : '');
-        const body = bodyRaw.length > 1500 ? bodyRaw.slice(0, 1500) + '…（正文过长已截断）' : bodyRaw;
         const head = `[网页分享] ${userName}分享了一个网页《${title}》${site}${url ? `\n链接：${url}` : ''}`;
-        return body ? `${head}\n网页正文：\n${body}` : head;
+        // 正文抓空（登录墙 / SPA 动态渲染等）：明确告诉角色没读到正文，避免它对着标题瞎编网页内容。
+        if (!bodyRaw) {
+            return `${head}\n（注：这个网页的正文没能抓取到——可能需要登录，或是用 JS 动态渲染的页面。你只看到标题和链接，不知道正文写了什么，别假装读过内容。）`;
+        }
+        const body = bodyRaw.length > 1500 ? bodyRaw.slice(0, 1500) + '…（正文过长已截断）' : bodyRaw;
+        return `${head}\n网页正文：\n${body}`;
     }
 
     // 默认：text / 未知类型 → 用 content
