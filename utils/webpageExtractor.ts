@@ -58,11 +58,17 @@ export function isXhsUrl(url: string): boolean {
   return /xiaohongshu\.com|xhslink\.com/i.test(url);
 }
 
+/** sfworker /fetch-webpage 的返回：reader=已渲染提取的干净正文；raw=原始 HTML 待前端解析。 */
+type WorkerFetchResult =
+  | { mode: 'reader'; title: string; content: string; finalUrl?: string }
+  | { mode: 'raw'; html: string; finalUrl?: string };
+
 /**
- * 通过 sfworker 的 /fetch-webpage 代理抓取网页 HTML（绕过浏览器 CORS）。
+ * 通过 sfworker 的 /fetch-webpage 代理抓取网页（绕过浏览器 CORS）。
+ * worker 优先用 Jina Reader 渲染 + 正文提取（SPA 也能读），失败回退裸 HTML。
  * 失败抛错（由 extractWebpageContent 兜底到直连）。
  */
-async function fetchHtmlViaWorker(url: string): Promise<{ html: string; finalUrl?: string }> {
+async function fetchViaWorker(url: string): Promise<WorkerFetchResult> {
   const res = await fetch(`${SFWORKER_URL}/fetch-webpage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -78,9 +84,13 @@ async function fetchHtmlViaWorker(url: string): Promise<{ html: string; finalUrl
     const msg = (err && (err.message || err)) || `网页抓取失败 (HTTP ${res.status})`;
     throw new Error(typeof msg === 'string' ? msg : '网页抓取失败');
   }
-  const html = String(parsed?.data?.html || '');
+  const data = parsed?.data || {};
+  if (data.mode === 'reader' && typeof data.content === 'string' && data.content.trim()) {
+    return { mode: 'reader', title: String(data.title || ''), content: data.content, finalUrl: data.finalUrl };
+  }
+  const html = String(data.html || '');
   if (!html) throw new Error('worker 返回的网页内容为空');
-  return { html, finalUrl: parsed?.data?.finalUrl };
+  return { mode: 'raw', html, finalUrl: data.finalUrl };
 }
 
 /** 直连兜底：大多数站点会被 CORS 挡掉，仅对放开跨域的页面有效。 */
@@ -90,6 +100,17 @@ async function fetchHtmlDirect(url: string): Promise<{ html: string }> {
   const html = await res.text();
   if (!html) throw new Error('网页内容为空');
   return { html };
+}
+
+/** 从一段正文生成短摘要（截到 EXCERPT_CHARS）。 */
+function makeExcerpt(text: string): string {
+  const t = (text || '').trim();
+  return t.length > EXCERPT_CHARS ? t.slice(0, EXCERPT_CHARS).trim() + '…' : t;
+}
+
+/** 从 URL 取站点名（去掉 www.）。 */
+function siteNameFromUrl(url: string): string | undefined {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return undefined; }
 }
 
 /**
@@ -161,16 +182,34 @@ export function parseWebpageHtml(html: string, url: string): {
  * 抓取失败（CORS / worker 报错 / 网络）时抛错，调用方负责给用户 toast。
  */
 export async function extractWebpageContent(url: string): Promise<ExtractedWebpage> {
-  let html = '';
-  let finalUrl: string | undefined;
-
-  const viaWorker = await fetchHtmlViaWorker(url).catch((e) => {
+  const viaWorker = await fetchViaWorker(url).catch((e) => {
     // sfworker 抓取报错：记录后让直连兜底再试一把。
     console.warn('[webpageExtractor] sfworker fetch failed, will try direct:', e);
     return null;
   });
 
-  if (viaWorker) {
+  // Jina Reader 路径：worker 已渲染 + 提取好干净正文，直接用，不必再 DOMParser。
+  if (viaWorker && viaWorker.mode === 'reader') {
+    const finalUrl = viaWorker.finalUrl;
+    const rawContent = viaWorker.content;
+    const content = rawContent.length > MAX_CONTENT_CHARS ? rawContent.slice(0, MAX_CONTENT_CHARS) : rawContent;
+    const siteName = siteNameFromUrl(finalUrl || url);
+    return {
+      url,
+      finalUrl,
+      title: (viaWorker.title || '').trim() || siteName || '网页',
+      siteName,
+      content,
+      excerpt: makeExcerpt(content),
+      truncated: rawContent.length > MAX_CONTENT_CHARS,
+      fetchedAt: Date.now(),
+    };
+  }
+
+  // raw HTML 路径：worker 裸抓回退 或 直连兜底，前端自己 DOMParser 提取。
+  let html = '';
+  let finalUrl: string | undefined;
+  if (viaWorker && viaWorker.mode === 'raw') {
     html = viaWorker.html;
     finalUrl = viaWorker.finalUrl;
   } else {

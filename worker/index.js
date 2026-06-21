@@ -1532,9 +1532,12 @@ export default {
     }
 
     // ========== 网页分享代理 (/fetch-webpage) ==========
-    // 前端把用户粘贴的链接发来，worker 服务端抓 HTML 回传（绕过浏览器 CORS），
-    // 前端再用 DOMParser 提正文存成 webpage_card，让角色"看见"网页内容。
-    // 见 utils/webpageExtractor.ts。SSRF 防护 + 8s 超时 + 2MB 截断，只收公网 http(s) + text/html。
+    // 前端把用户粘贴的链接发来，worker 抓回正文（绕过浏览器 CORS），存成 webpage_card 让角色"看见"。
+    // 见 utils/webpageExtractor.ts。两段式：
+    //   1) Jina Reader (r.jina.ai)：后端渲染 JS/SPA + 正文提取，MSN/微博/知乎这类动态页也能读到正文；
+    //   2) 失败/限速时回退裸抓 HTML，前端用 DOMParser 兜底提取。
+    // 返回 data.mode 区分：'reader'(干净正文 content) / 'raw'(原始 html)。
+    // 可选 env.JINA_API_KEY 提升 Jina 速率（无 key 也能用，走 IP 限速）。SSRF 防护 + 2MB 截断。
     if (url.pathname === '/fetch-webpage') {
       if (request.method !== 'POST') {
         return jsonResponse({ error: 'Method not allowed. Use POST.' }, { status: 405, origin });
@@ -1552,6 +1555,31 @@ export default {
       if (isUnsafeFetchTarget(target)) {
         return jsonResponse({ error: '只允许抓取公网 http(s) 网页' }, { status: 400, origin });
       }
+
+      // 1) Jina Reader 优先（渲染 + 正文提取）。失败静默回退裸抓，不影响整体。
+      {
+        const jc = new AbortController();
+        const jt = setTimeout(() => jc.abort(), 20000); // 渲染慢，给 20s
+        try {
+          const jh = { 'Accept': 'application/json', 'X-Return-Format': 'markdown' };
+          if (env && env.JINA_API_KEY) jh['Authorization'] = `Bearer ${env.JINA_API_KEY}`;
+          const jr = await fetch(`https://r.jina.ai/${target.toString()}`, { method: 'GET', headers: jh, signal: jc.signal });
+          if (jr.ok) {
+            const jj = await jr.json().catch(() => null);
+            const d = jj && jj.data;
+            const content = (d && typeof d.content === 'string') ? d.content.trim() : '';
+            if (content) {
+              console.log('fetch-webpage[jina]', target.toString(), '→', content.length, 'chars');
+              return jsonResponse({ success: true, data: { mode: 'reader', title: (d.title || '').trim(), content, finalUrl: d.url || target.toString() } }, { origin });
+            }
+          }
+          console.log('fetch-webpage[jina] miss → raw fallback, status', jr.status);
+        } catch (jinaErr) {
+          console.log('fetch-webpage[jina] error → raw fallback:', String((jinaErr && jinaErr.message) || jinaErr));
+        } finally { clearTimeout(jt); }
+      }
+
+      // 2) 裸抓 HTML 兜底
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
       try {
@@ -1572,8 +1600,8 @@ export default {
           return jsonResponse({ error: `不支持的内容类型: ${ct}` }, { status: 415, origin });
         }
         const html = await readBodyCapped(upstream, 2 * 1024 * 1024);
-        console.log('fetch-webpage', target.toString(), '→', upstream.status, html.length, 'chars');
-        return jsonResponse({ success: true, data: { html, finalUrl: upstream.url || target.toString(), contentType: ct } }, { origin });
+        console.log('fetch-webpage[raw]', target.toString(), '→', upstream.status, html.length, 'chars');
+        return jsonResponse({ success: true, data: { mode: 'raw', html, finalUrl: upstream.url || target.toString(), contentType: ct } }, { origin });
       } catch (e) {
         const aborted = e && e.name === 'AbortError';
         return jsonResponse(
