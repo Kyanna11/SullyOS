@@ -430,6 +430,22 @@ const Settings: React.FC = () => {
     setTimeout(() => setOtherStatusMsg(''), 2000);
   };
 
+  // 选「谁来做语音生成」立即落库——不需要再点下面的保存。
+  // 连同当前「其他 API」草稿一起提交（与保存按钮同一份 payload）：一是即时生效，
+  // 二是避免 [apiConfig] 同步 effect 把刚填、还没保存的 Key 草稿冲掉。
+  const selectTtsProvider = (provider: 'minimax' | 'fishaudio') => {
+    setLocalTtsProvider(provider);
+    updateApiConfig({
+      minimaxApiKey: localMiniMaxKey,
+      minimaxGroupId: localMiniMaxGroupId,
+      minimaxRegion: localMiniMaxRegion,
+      aceStepApiKey: localAceStepKey,
+      fishAudioApiKey: localFishKey,
+      ttsProvider: provider,
+    });
+    addToast(provider === 'fishaudio' ? '语音生成已切到鱼声 Fish' : '语音生成已切到 MiniMax', 'success');
+  };
+
   const fetchModels = async () => {
     if (!localUrl) { setStatusMsg('请先填写 URL'); return; }
     setIsLoadingModels(true);
@@ -1296,7 +1312,7 @@ const Settings: React.FC = () => {
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">MiniMax 服务器</label>
                         <button
                             type="button"
-                            onClick={() => setLocalTtsProvider('minimax')}
+                            onClick={() => selectTtsProvider('minimax')}
                             className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all ${localTtsProvider === 'minimax' ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm' : 'bg-white/60 text-slate-400 border-slate-200 active:scale-95'}`}
                         >
                             {localTtsProvider === 'minimax' ? '✓ 语音生成中' : '选为语音'}
@@ -1343,7 +1359,7 @@ const Settings: React.FC = () => {
                         <label className="text-[10px] font-bold text-sky-600 uppercase tracking-widest">鱼声 Fish Audio</label>
                         <button
                             type="button"
-                            onClick={() => setLocalTtsProvider('fishaudio')}
+                            onClick={() => selectTtsProvider('fishaudio')}
                             className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all ${localTtsProvider === 'fishaudio' ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm' : 'bg-white/60 text-slate-400 border-slate-200 active:scale-95'}`}
                         >
                             {localTtsProvider === 'fishaudio' ? '✓ 语音生成中' : '选为语音'}
