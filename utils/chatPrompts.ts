@@ -930,11 +930,12 @@ ${userProfile.name} 给你反馈时，别当成约束，当成信任——ta 在
                     content = `${timeStr}（这是你真实经历过的一段过往，由用户珍藏并交还给你——当成自己的亲身记忆来对待，它带来的情绪与体会都是真的，聊到时可自然提及，但不必逐字复述。）\n${body}`;
                 }
                 else if ((m.type as string) === 'phone_card') {
-                    // phone_card：用户翻看你手机时看到的内容（聊天/订单/外卖/朋友圈等数字痕迹）。
-                    // 框定为「你自己手机里确实存在的东西」，可自洽，但不必主动提起。
+                    // phone_card：你自己手机里的内容（聊天/订单/外卖/朋友圈/智能体等数字痕迹）。
+                    // 框定为「你刚看了眼自己手机、这是里面的隐私」——不暗示用户在偷看，且带一点"未必愿意被看到"的私密感。
                     const pc: any = m.metadata?.phoneCard || {};
                     const body = typeof m.content === 'string' ? m.content : '';
-                    content = `${timeStr}（这是用户翻看你手机时、你${pc.app || '手机'}里呈现的内容——属于你自己的数字痕迹，当成手机里确实有的东西即可，聊到再自然提及，不必主动说起。）\n${body}`;
+                    const uName = userProfile?.name || '用户';
+                    content = `${timeStr}（你刚刚看了眼手机，这是你${pc.app || '手机'}里的内容——这些是你自己的隐私，不一定愿意让${uName}看到。当成手机里确实有的东西即可，聊到再自然提及，不必主动说起。）\n${body}`;
                 }
                 else if ((m.type as string) === 'theater_card') {
                     // theater_card：用户「窥视」了你某个时段的行为小剧场。那段演出就是你当时真实在做的事，
