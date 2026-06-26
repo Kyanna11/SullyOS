@@ -671,8 +671,12 @@ export interface AiSession {
 export interface TavernCard {
     id: string;
     name: string;
-    /** 角色卡设定 */
+    /** 卡类型：character=单个角色卡；world=大型世界卡（跑团/修仙/西幻等） */
+    kind?: 'character' | 'world';
+    /** 角色人设 / 世界设定 */
     persona: string;
+    /** 剧情背景 / 初始场景（酒馆的 scenario） */
+    scenario?: string;
     emoji: string;
     /** 是否照着用户（查手机的人）捏的——最偷窥感的一项 */
     basedOnUser?: boolean;

@@ -95,7 +95,8 @@ const matchVendor = (raw: string): string => {
 const getVendorTheme = (name: string, service: AiServiceKind): VendorTheme => {
     if (service === 'tavern') return { key: 'tavern', label: name || '酒馆', dark: true,
         bg: 'radial-gradient(140% 90% at 50% 0%, #241319 0%, #120a0f 70%)', text: '#fbe9ef', sub: 'rgba(251,233,239,0.5)', accent: '#fb7185',
-        userBg: 'linear-gradient(135deg,#fb7185,#fb7185bb)', userText: '#fff', aiBg: 'rgba(255,255,255,0.07)', aiText: 'rgba(255,255,255,0.92)' };
+        userBg: 'linear-gradient(135deg,#fb7185,#fb7185bb)', userText: '#fff', aiBg: 'rgba(255,255,255,0.07)', aiText: 'rgba(255,255,255,0.92)',
+        font: "'Shippori Mincho','Noto Serif SC',serif" };
     const v = service === 'claude' ? 'claude' : matchVendor(name);
     switch (v) {
         case 'gemini': return { key: 'gemini', label: 'Gemini', dark: false,
@@ -820,13 +821,18 @@ ${AI_VENDOR_LORE}
 格式 "我:" = 你，"对方:" = AI。
 返回 JSON 数组：[{ "serviceName": "你对它的称呼(默认 Claude)", "title": "...(10字内)", "transcript": "..." }]`;
             } else {
-                task = `你（${charName}）在玩"酒馆"（类似 SillyTavern 的 AI 角色扮演）：自己捏角色卡，再跟 AI 扮演的角色对戏。
+                task = `你（${charName}）在玩"酒馆"(SillyTavern 那种 AI 角色扮演)：自己捏角色卡，再跟 AI 扮演的角色对戏。酒馆不是一句话聊天，而是**沉浸式长剧情、像在和 AI 合写小说**。
 请返回一个 JSON 对象（不是数组）：
 {
-  "cards": [ 1-2 张你建的角色卡。可能是理想型 / 暗恋投影 / 纯幻想角色；其中可以有一张是照着「${userName}」捏的(basedOnUser=true，但名字会改掉)。每张：{ "name": "卡片名", "emoji": "🎭", "persona": "角色卡设定(40字内)", "basedOnUser": false } ],
-  "sessions": [ 1-2 段扮演记录。每段：{ "serviceName": "对应卡片名", "title": "剧情标题(10字内)", "cardName": "对应 cards 里的 name", "transcript": "我: ...\\n对方: ..." } ]
+  "cards": [ 1-2 张你建的卡，两类任选/混搭：①单个角色卡(kind:"character")——理想型 / 暗恋投影 / 纯幻想角色，其中可以有一张照着「${userName}」捏的(basedOnUser=true，名字改掉)；②大型世界卡(kind:"world")——跑团 / 修仙 / 西幻 / 末世那种，设定庞大、有世界观和系统(取决于 TA 的爱好)。每张：{ "name": "卡名", "kind": "character|world", "emoji": "🎭", "persona": "角色人设或世界设定(60字内)", "scenario": "初始场景/开场(40字内)", "basedOnUser": false } ],
+  "sessions": [ 1 段（最多 2 段）扮演记录。每段：{ "serviceName": "对应卡片名", "title": "剧情标题(12字内)", "cardName": "对应 cards 里的 name", "transcript": "..." } ]
 }
-要点：扮演内容暴露你的幻想 / 渴望 / 不敢实现的关系。"我:" = 你(玩家)，"对方:" = AI 扮演的卡片角色。`;
+**transcript 写法（重点，别写成短聊天）**：
+- 长剧情小说体：第三人称叙事 + 引号对白；动作 / 神态 / 心理描写用 *星号* 包住（如 *她抬眼看你，睫毛轻颤*）。
+- "我:" = 你(玩家 ${charName}) 的行动与发言，"对方:" = AI 扮演的角色，两边交替推进。
+- 每一轮都是有分量的一整段（至少 3-5 句，含场景/动作/对白/心理）；首轮"对方:"相当于开场白，把人物和场景立起来。
+- 一段共 4-6 轮，每轮都要长、要有文学性和代入感。
+要点：扮演内容暴露你的幻想 / 渴望 / 不敢实现的关系。`;
             }
 
             const fullPrompt = `${context}\n\n### [Recent Chat Context]\n${recentMsgs}\n\n### [Task]\n${task}\n请结合「当前时间 / 距离上次联系」和人设，让内容贴合你近期的真实状态。只输出 JSON，不要解释。`;
@@ -847,7 +853,7 @@ ${AI_VENDOR_LORE}
                     if (!c?.name) continue;
                     const id = `card-${now}-${rid()}`;
                     nameToId[c.name] = id;
-                    newCards.push({ id, name: c.name, persona: c.persona || '', emoji: c.emoji || '🎭', basedOnUser: !!c.basedOnUser, createdAt: now });
+                    newCards.push({ id, name: c.name, kind: c.kind === 'world' ? 'world' : 'character', persona: c.persona || '', scenario: c.scenario || undefined, emoji: c.emoji || '🎭', basedOnUser: !!c.basedOnUser, createdAt: now });
                 }
                 for (const sess of (obj.sessions || [])) {
                     if (!sess?.transcript) continue;
@@ -922,8 +928,11 @@ ${AI_VENDOR_LORE}
             if (isTavern) {
                 const card = aiCards.find(c => c.id === session.cardId);
                 const { context } = await buildAiContext(targetChar);
-                prompt = `${context}\n\n你正在玩"酒馆"AI 角色扮演。你扮演你自己（玩家 ${charName}），对面是 AI 扮演的角色「${card?.name || session.serviceName}」${card?.persona ? `（设定：${card.persona}）` : ''}。
-下面是你和该角色的对戏记录（"我:"=你，"对方:"=对方角色）。请**以你自己的本色人设**续写 "我:" 的下一句反应（1-3 句，贴合当前剧情与情绪，可带 *动作*）。只输出这一句正文，不要前缀、不要解释。\n\n${transcript}`;
+                prompt = `${context}\n\n你正在玩"酒馆"沉浸式长剧情角色扮演（像和 AI 合写小说）。你是玩家 ${charName}，对面是 AI 扮演的角色「${card?.name || session.serviceName}」${card?.persona ? `（人设：${card.persona}）` : ''}${card?.scenario ? `（背景：${card.scenario}）` : ''}。
+下面是对戏记录（"我:"=你/玩家，"对方:"=AI 扮的角色）。对方刚回了最新一段。请输出你（玩家）这一轮，二选一：
+A) 多数情况：**以本色人设续写"我:"的剧情**——小说体，第三人称叙事 + 引号对白，动作/神态/心理用 *星号*，3-5 句，推进剧情、有代入感。
+B) 偶尔（当对面那段明显出彩 / 掉链子 / 崩人设 / 太八股 / 太平淡时）：像真酒馆玩家那样**跳出剧情、单独打一句全角括号的 OOC 调教指令**给 AI，例如：（这段太平淡了，昂扬一点）（怎么这么八股啊，重写）（很有活人感，保持！）（崩了，TA 不会这么说话）。OOC 就只输出这一句括号、别带剧情。
+看对面这段的质量和你的心情决定 A 还是 B。只输出正文，不要 "我:" 前缀、不要解释。\n\n${transcript}`;
             } else {
                 const persona = session.service === 'claude'
                     ? `你是「${session.serviceName}」，Claude 那一卦的 AI：温和、有洞察、爱反问，但回避型人格、边界感强，动不动"抱歉，我无法……""我理解你的感受，但是……"，先共情再委婉推开。`
@@ -1809,11 +1818,15 @@ ${AI_VENDOR_LORE}
                     {aiService === 'tavern' && aiCards.length > 0 && (
                         <div className="flex gap-2.5 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
                             {aiCards.map(c => (
-                                <div key={c.id} className="shrink-0 w-32 rounded-2xl p-3 border border-white/[0.07] bg-white/[0.035]">
-                                    <div className="text-2xl">{c.emoji}</div>
+                                <div key={c.id} className="shrink-0 w-36 rounded-2xl p-3 border border-white/[0.07] bg-white/[0.035]">
+                                    <div className="flex items-center justify-between">
+                                        <div className="text-2xl">{c.emoji}</div>
+                                        <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-rose-400/20 text-rose-200/90">{c.kind === 'world' ? '世界卡' : '角色卡'}</span>
+                                    </div>
                                     <div className="text-[12.5px] font-semibold text-white mt-1.5 truncate">{c.name}</div>
                                     {c.basedOnUser && <div className="text-[9px] text-rose-300/90 mt-0.5">⚑ 照着你捏的</div>}
-                                    <div className="text-[10px] text-white/45 mt-1 line-clamp-3 leading-snug">{c.persona}</div>
+                                    <div className="text-[10px] text-white/45 mt-1 line-clamp-2 leading-snug">{c.persona}</div>
+                                    {c.scenario && <div className="text-[9.5px] text-white/35 mt-1 line-clamp-2 italic leading-snug">场景：{c.scenario}</div>}
                                 </div>
                             ))}
                         </div>
@@ -1859,13 +1872,26 @@ ${AI_VENDOR_LORE}
         const lines = parseTranscript(s.transcript);
         const partnerName = isTavern ? (card?.name || s.serviceName) : s.serviceName;
         const partnerEmoji = isTavern ? (card?.emoji || '🎭') : null;
-        const inputHint = isTavern ? `以「${partnerName}」身份回 TA…` : `替 TA 问 ${partnerName}…`;
+        const inputHint = isTavern ? `以「${partnerName}」身份续写剧情…` : `替 TA 问 ${partnerName}…`;
         // 厂商皮肤：按 serviceName 换肤（配色 / logo / 气泡 / 明暗）
         const t = getVendorTheme(s.serviceName, s.service);
         const clock = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
         const hairline = t.dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)';
         const inputBg = t.dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
         const aiAvatarBg = t.key === 'gpt' ? '#000' : t.key === 'claude' ? '#f0e9da' : t.dark ? 'rgba(255,255,255,0.08)' : '#fff';
+
+        // 酒馆是长剧情小说体：把连续同一说话人的行合并成「楼层」，*动作* 渲染成斜体淡色
+        const floors: { isMe: boolean; text: string }[] = [];
+        for (const ln of lines) {
+            const prev = floors[floors.length - 1];
+            if (prev && prev.isMe === ln.isMe) prev.text += '\n' + ln.text;
+            else floors.push({ isMe: ln.isMe, text: ln.text });
+        }
+        const isOOC = (txt: string) => /^[（(].*[）)]$/.test(txt.trim()) && !txt.trim().slice(1, -1).match(/[（(]/);
+        const renderProse = (txt: string) => txt.split(/(\*[^*]+\*)/g).filter(Boolean).map((p, i) =>
+            p.startsWith('*') && p.endsWith('*')
+                ? <em key={i} style={{ color: t.sub }}>{p.slice(1, -1)}</em>
+                : <span key={i}>{p}</span>);
         return (
             <div className="absolute inset-0 w-full h-full flex flex-col z-[60] overflow-hidden"
                 style={{ background: t.bg, color: t.text, fontFamily: t.font }}>
@@ -1904,17 +1930,51 @@ ${AI_VENDOR_LORE}
                 </div>
                 {isTavern && card && (
                     <div className="px-4 pt-2 pb-1 shrink-0">
-                        <div className="rounded-2xl p-3 flex items-center gap-3" style={{ background: `${t.accent}1a`, border: `1px solid ${hairline}` }}>
+                        <div className="rounded-2xl p-3 flex items-start gap-3" style={{ background: `${t.accent}1a`, border: `1px solid ${hairline}` }}>
                             <div className="text-2xl shrink-0">{card.emoji}</div>
-                            <div className="min-w-0">
-                                <div className="text-[12.5px] font-semibold flex items-center gap-1.5" style={{ color: t.text }}>{card.name}{card.basedOnUser && <span className="text-[9px]" style={{ color: t.accent }}>⚑ 照着你捏的</span>}</div>
-                                <div className="text-[10px] line-clamp-2" style={{ color: t.sub }}>{card.persona}</div>
+                            <div className="min-w-0 flex-1">
+                                <div className="text-[12.5px] font-semibold flex items-center gap-1.5 flex-wrap" style={{ color: t.text }}>
+                                    {card.name}
+                                    <span className="text-[8.5px] px-1.5 py-0.5 rounded-full" style={{ background: `${t.accent}26`, color: t.accent }}>{card.kind === 'world' ? '世界卡 · 跑团' : '角色卡'}</span>
+                                    {card.basedOnUser && <span className="text-[8.5px] px-1.5 py-0.5 rounded-full" style={{ background: `${t.accent}26`, color: t.accent }}>⚑ 照着你捏的</span>}
+                                </div>
+                                <div className="text-[10px] mt-0.5 line-clamp-2" style={{ color: t.sub }}>{card.persona}</div>
+                                {card.scenario && <div className="text-[10px] mt-1 line-clamp-2 italic" style={{ color: t.sub }}>场景：{card.scenario}</div>}
                             </div>
                         </div>
                     </div>
                 )}
                 <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 no-scrollbar overscroll-contain min-h-0">
-                    {lines.map((m, i) => {
+                    {/* 酒馆：长剧情小说体「楼层」；玩家(机主)有时会跳出剧情打括号 OOC 调教指令 */}
+                    {isTavern ? floors.map((f, i) => {
+                        if (f.isMe && isOOC(f.text)) {
+                            // 玩家的 OOC 导演注：跳出剧情、调教"AI"
+                            return (
+                                <div key={i} className="flex justify-end">
+                                    <div className="max-w-[88%] rounded-xl px-3 py-2 text-[11.5px] leading-relaxed flex items-start gap-1.5"
+                                        style={{ background: `${t.accent}1a`, border: `1px dashed ${t.accent}66`, color: t.accent }}>
+                                        <span className="text-[9px] font-bold tracking-wider mt-0.5 shrink-0 opacity-80">OOC</span>
+                                        <span className="whitespace-pre-wrap">{f.text.trim()}</span>
+                                    </div>
+                                </div>
+                            );
+                        }
+                        const who = f.isMe ? charName : partnerName;
+                        return (
+                            <div key={i} className="rounded-2xl p-3.5"
+                                style={{ background: f.isMe ? `${t.accent}10` : 'rgba(255,255,255,0.04)', border: `1px solid ${hairline}` }}>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden shrink-0"
+                                        style={{ background: f.isMe ? 'transparent' : `${t.accent}1f` }}>
+                                        {f.isMe ? <img src={targetChar.avatar} className="w-7 h-7 object-cover" /> : <span className="text-base">{partnerEmoji}</span>}
+                                    </div>
+                                    <span className="text-[12.5px] font-semibold" style={{ color: f.isMe ? t.accent : t.text }}>{who}</span>
+                                    {f.isMe && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: `${t.accent}26`, color: t.accent }}>玩家</span>}
+                                </div>
+                                <div className="text-[13px] leading-[1.95] whitespace-pre-wrap" style={{ color: t.text }}>{renderProse(f.text)}</div>
+                            </div>
+                        );
+                    }) : lines.map((m, i) => {
                         const bare = !m.isMe && t.aiBg === 'transparent'; // ChatGPT/Claude：AI 不用气泡，整段铺开
                         return (
                             <div key={i} className={`flex items-end gap-2 ${m.isMe ? 'justify-end' : 'justify-start'}`}>
