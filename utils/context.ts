@@ -2,6 +2,7 @@
 import { CharacterProfile, UserProfile, DailySchedule } from '../types';
 import { normalizeUserImpression } from './impression';
 import { getFlowNarrativeKey, isScheduleFeatureOn } from './scheduleGenerator';
+import { resolveCharTimeZone, nowInTimeZone, tzAwarenessNote } from './timezone';
 
 /**
  * Memory Central
@@ -119,8 +120,11 @@ export const ContextBuilder = {
 
         // 1a. 真实时间感知 (Time Awareness) — 跟随 timeAwarenessEnabled 设置，默认开启。
         // 统一在 buildCoreContext 注入，让所有调用方（私聊/查手机/人际关系/通话/约会…）都知道"现在"。
+        // 自定义时区（异国恋等）：开启后这里的"当前时间"按角色所在时区折算，并附时差提示，
+        // 让查手机/人际关系/通话等所有直连 buildCoreContext 的路径都拿到正确的本地时间。
         if (char.timeAwarenessEnabled !== false) {
-            const now = new Date();
+            const charTz = resolveCharTimeZone(char);
+            const now = nowInTimeZone(charTz);
             const h = now.getHours();
             const dayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
             const timeOfDay =
@@ -129,7 +133,10 @@ export const ContextBuilder = {
             const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
             const timeStr = `${h.toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
             context += `### 当前时间 (Now)\n`;
-            context += `现在是 ${dateStr} ${dayNames[now.getDay()]} ${timeOfDay} ${timeStr}。请据此自然地拥有真实的时间观念（早晚作息、工作日/周末、距离上次互动多久等），不要凭空假设时间。\n\n`;
+            context += `现在是 ${dateStr} ${dayNames[now.getDay()]} ${timeOfDay} ${timeStr}。请据此自然地拥有真实的时间观念（早晚作息、工作日/周末、距离上次互动多久等），不要凭空假设时间。\n`;
+            const tzNote = tzAwarenessNote(charTz);
+            if (tzNote) context += `${tzNote.trim()}\n`;
+            context += `\n`;
         }
 
         // 1b. 自我领悟词条 (Self Insights) — 消化过程中反刍产生的常驻自我认知
