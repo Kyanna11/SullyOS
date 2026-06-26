@@ -51,11 +51,16 @@ const THEMES: Record<DreamArchetype, DreamTheme> = {
     deepsleep: { label: '深眠',     sub: 'Deep Sleep',      accent: 'rgba(255,255,255,0.35)', bg: 'radial-gradient(120% 120% at 50% 50%, #0a0b10 0%, #050608 70%, #000 100%)', ambient: 'none', serif: true },
 };
 
-// 选择器/调试用的固定顺序（12 种常规 + 隐藏深眠 = 13）
+// 选择器/调试用的固定顺序与「修正后的连续编号」。
+// （原规格编号有误：10 遗忘之后直接跳到 12 预言、13 清醒，缺了 11；
+//   这里按正确顺序连续编号：预言=11、清醒=12，深眠为隐藏项不计号。）
 const ALL_ARCHETYPES: DreamArchetype[] = [
     'sweet', 'nightmare', 'flower', 'flying', 'falling', 'starry',
     'ocean', 'childhood', 'anxiety', 'forgotten', 'prophetic', 'lucid', 'deepsleep',
 ];
+// 测试选择器格子上显示的序号（深眠是隐藏项 → 标「隐」而非数字）
+const archetypeNo = (a: DreamArchetype): string =>
+    a === 'deepsleep' ? '隐' : String(ALL_ARCHETYPES.indexOf(a) + 1).padStart(2, '0');
 
 // ============================================================
 //  GENERATION — 构建导演 prompt、调模型、解析
@@ -582,11 +587,11 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
                                     const active = forcedArchetype === a;
                                     return (
                                         <button key={a} onClick={() => setForcedArchetype(active ? null : a)}
-                                            className="py-1.5 rounded-lg text-[10.5px] border transition active:scale-95"
+                                            className="py-1.5 rounded-lg text-[10.5px] border transition active:scale-95 flex items-center justify-center gap-1"
                                             style={active
                                                 ? { background: THEMES[a].accent, color: '#15121c', borderColor: 'transparent', fontWeight: 700 }
                                                 : { background: 'rgba(255,255,255,0.035)', borderColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}>
-                                            {THEMES[a].label}
+                                            <span className="tabular-nums opacity-50 text-[8.5px]">{archetypeNo(a)}</span>{THEMES[a].label}
                                         </button>
                                     );
                                 })}
